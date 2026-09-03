@@ -1,0 +1,7 @@
+﻿LIFeOS FRONTEND (React + Vite)
+=======================
+1. npm install
+2. npm run dev  ->  http://localhost:5173
+   (/api requests are proxied to the backend on localhost:5000)
+3. Production build:  npm run build
+4. Deploy: Vercel (vercel.json) or Netlify (netlify.toml) — set VITE_API_URL to your deployed API

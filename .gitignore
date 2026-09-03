@@ -1,0 +1,30 @@
+# ── Dependencies ────────────────────────────────────────────
+node_modules/
+
+# ── Build output ────────────────────────────────────────────
+dist/
+build/
+
+# ── Environment & secrets ───────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Logs ────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ── OS / editor junk ────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ── Archives (packaged deliverables, not source) ────────────
+*.zip
+*.rar
+
+# ── Runtime ─────────────────────────────────────────────────
+coverage/
+.tmp/
