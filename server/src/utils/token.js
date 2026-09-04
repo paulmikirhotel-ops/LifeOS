@@ -34,7 +34,11 @@ export const REFRESH_COOKIE = 'lifeos_refresh';
 function cookieBase() {
   return {
     httpOnly: true,
-    sameSite: 'lax',
+    // Cross-site deployment (frontend on Netlify, API on Render) requires
+    // SameSite=None. Browsers refuse Lax cookies on cross-site XHR, which made
+    // logins "succeed" while every follow-up request arrived unauthenticated.
+    // SameSite=None mandates Secure, which is always on in production.
+    sameSite: env.cookie.secure ? 'none' : 'lax',
     secure: env.cookie.secure,
     path: '/',
   };
