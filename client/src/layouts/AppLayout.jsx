@@ -4,7 +4,7 @@ import {
   LayoutDashboard, CheckSquare, Calendar, Book, 
   Target, Zap, PieChart, Settings, Bell, 
   LogOut, User, Menu, X, Wallet, Heart,
-  Sun, Moon, ChevronDown, Check, MoreHorizontal
+  Sun, Moon, ChevronDown, Check, MoreHorizontal, Video
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useTenant } from '../context/TenantContext.jsx';
@@ -37,6 +37,7 @@ function AppLayoutInner() {
     { label: 'Dashboard', icon: LayoutDashboard, path: '/', permission: '*' },
     { label: 'Tasks', icon: CheckSquare, path: '/tasks', permission: 'tasks.view' },
     { label: 'Calendar', icon: Calendar, path: '/calendar', permission: 'schedule.view' },
+    { label: 'Meetings', icon: Video, path: '/meetings', permission: 'meetings.view' },
     { label: 'Journal', icon: Book, path: '/journal', permission: 'journal.view' },
     { label: 'Focus', icon: Zap, path: '/focus', permission: '*' },
     { label: 'Finance', icon: Wallet, path: '/finance', permission: 'finance.view' },

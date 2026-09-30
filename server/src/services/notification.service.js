@@ -24,6 +24,7 @@ export const MODULES = [
   'finance',
   'habit',
   'goal',
+  'meeting',
   'system',
   'invitation',
 ];
@@ -62,6 +63,7 @@ export const DEFAULT_PREFS = {
     finance: true,
     habit: true,
     goal: true,
+    meeting: true,
     system: true,
     invitation: true,
   },

@@ -9,6 +9,7 @@ import {
   Target,
   Mail,
   Clock,
+  Video,
 } from 'lucide-react';
 
 /**
@@ -24,6 +25,7 @@ export const MODULE_META = {
   finance: { icon: Wallet, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/30', route: '/finance' },
   habit: { icon: Heart, color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-900/30', route: '/habits' },
   goal: { icon: Target, color: 'text-fuchsia-500', bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', route: '/goals' },
+  meeting: { icon: Video, color: 'text-cyan-500', bg: 'bg-cyan-50 dark:bg-cyan-900/30', route: '/meetings' },
   invitation: { icon: Mail, color: 'text-sky-500', bg: 'bg-sky-50 dark:bg-sky-900/30', route: '/settings' },
   reminder: { icon: Clock, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/30', route: null },
   system: { icon: Bell, color: 'text-slate-500', bg: 'bg-slate-100 dark:bg-slate-800', route: null },

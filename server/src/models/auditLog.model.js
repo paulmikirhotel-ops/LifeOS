@@ -22,7 +22,7 @@ const auditLogSchema = new Schema(
     },
     resource: {
       type: String,
-      enum: ['income', 'expense', 'category'],
+      enum: ['income', 'expense', 'category', 'meeting'],
       required: true,
     },
     resourceId: {

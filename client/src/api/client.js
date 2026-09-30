@@ -10,6 +10,23 @@ const api = axios.create({
   headers: { 'Cache-Control': 'no-store' },
 });
 
+// One refresh at a time. The API rotates refresh tokens, so parallel refreshes (e.g. a
+// recording chunk upload and a poll both getting a 401 after the 15-minute access token
+// expires) would invalidate each other and sign the user out mid-meeting.
+let refreshing = null;
+function refreshSession() {
+  if (!refreshing) {
+    // Use the configured API base (VITE_API_URL) — a hard-coded '/api/…' would hit the
+    // static host instead of the API when the frontend and API are deployed separately.
+    refreshing = axios
+      .post(`${api.defaults.baseURL}/auth/refresh`, {}, { withCredentials: true })
+      .finally(() => {
+        refreshing = null;
+      });
+  }
+  return refreshing;
+}
+
 // Response interceptor to extract data from envelope
 api.interceptors.response.use(
   (response) => {
@@ -26,12 +43,18 @@ api.interceptors.response.use(
         originalRequest._retry = true;
         try {
           // Attempt to refresh the token
-          await axios.post('/api/auth/refresh', {}, { withCredentials: true });
+          await refreshSession();
           return api(originalRequest);
         } catch (refreshError) {
-          // Refresh failed, clear auth and redirect
-          window.dispatchEvent(new CustomEvent('auth:unauthorized'));
-          return Promise.reject(refreshError);
+          // Only sign out when the server actually rejected the session. A dropped connection
+          // must not log the user out of a live meeting.
+          const status = refreshError?.response?.status;
+          if (status === 401 || status === 403) {
+            window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+          }
+          return Promise.reject(
+            refreshError?.response?.data || { success: false, message: 'Connection interrupted', code: 'NETWORK_ERROR' }
+          );
         }
       }
     }

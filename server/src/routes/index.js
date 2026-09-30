@@ -15,6 +15,8 @@ import financeRoutes from './finance.routes.js';
 import notificationRoutes from './notification.routes.js';
 import analyticsRoutes from './analytics.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
+import meetingRoutes from './meeting.routes.js';
+import publicMeetingRoutes from './publicMeeting.routes.js';
 
 /**
  * API route registry — every module mounts here.
@@ -37,5 +39,7 @@ router.use('/finance', financeRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/meetings', meetingRoutes);
+router.use('/public', publicMeetingRoutes);
 
 export default router;

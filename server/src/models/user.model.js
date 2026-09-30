@@ -35,6 +35,7 @@ const userSchema = new mongoose.Schema(
         finance: { type: Boolean, default: true },
         habit: { type: Boolean, default: true },
         goal: { type: Boolean, default: true },
+        meeting: { type: Boolean, default: true },
         system: { type: Boolean, default: true },
         invitation: { type: Boolean, default: true },
       },
