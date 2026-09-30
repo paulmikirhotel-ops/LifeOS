@@ -33,6 +33,7 @@ const prefsSchema = z.object({
       finance: z.boolean().optional(),
       habit: z.boolean().optional(),
       goal: z.boolean().optional(),
+      meeting: z.boolean().optional(),
       system: z.boolean().optional(),
       invitation: z.boolean().optional(),
     })

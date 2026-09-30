@@ -14,10 +14,13 @@ const calendarEventSchema = new mongoose.Schema(
     allDay: { type: Boolean, default: false },
     startAt: { type: Date, required: true },
     endAt: { type: Date },
+    // Set when the event was created by the Meetings module.
+    meetingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Meeting' },
   },
   { timestamps: true }
 );
 
 calendarEventSchema.index({ tenantId: 1, startAt: 1 });
+calendarEventSchema.index({ meetingId: 1 }, { sparse: true });
 
 export default mongoose.model('CalendarEvent', calendarEventSchema);

@@ -400,6 +400,7 @@ const MODULE_OPTIONS = [
   { key: 'finance', label: 'Finance', desc: 'Income, expenses and financial reminders' },
   { key: 'habit', label: 'Habits', desc: 'Daily habit reminders and completions' },
   { key: 'goal', label: 'Goals', desc: 'Deadlines, milestones and completions' },
+  { key: 'meeting', label: 'Meetings', desc: 'Meeting invites, changes and reminders' },
   { key: 'invitation', label: 'Invitations', desc: 'Workspace invites' },
 ];
 

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { 
   ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, 
   Clock, MapPin, X, Layers
@@ -193,10 +194,11 @@ export default function CalendarPage() {
                   <div className={`flex-1 p-3 rounded-xl border ${item.type === 'event' ? 'border-blue-100 bg-blue-50/50 dark:bg-blue-900/10 dark:border-blue-900/30' : 'border-amber-100 bg-amber-50/50 dark:bg-amber-900/10 dark:border-amber-900/30'}`}>
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-xs font-bold dark:text-white">{item.title}</p>
-                      <Badge variant={item.type === 'event' ? 'info' : 'warning'} className="text-[8px]">{item.type}</Badge>
+                      <Badge variant={item.type === 'event' ? 'info' : 'warning'} className="text-[8px]">{item.meetingId ? 'meeting' : item.type}</Badge>
                     </div>
                     {item.location && <div className="flex items-center gap-1 text-[10px] text-slate-500"><MapPin className="w-2 h-2" />{item.location}</div>}
                     {item.category && <div className="flex items-center gap-1 text-[10px] text-slate-500"><Layers className="w-2 h-2" />{item.category}</div>}
+                    {item.meetingId && <Link to={`/meetings/${item.meetingId}`} className="inline-block mt-1 text-[10px] font-bold text-indigo-600 hover:underline">Open meeting →</Link>}
                   </div>
                 </div>
               ))

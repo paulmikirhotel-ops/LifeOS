@@ -5,6 +5,7 @@ import {
   Goal,
   Habit,
   HabitLog,
+  Meeting,
 } from '../models/index.js';
 import * as notificationService from './notification.service.js';
 
@@ -89,7 +90,8 @@ async function remindTaskDeadlines(now) {
 
 async function remindCalendarEvents(now) {
   const soon = new Date(now.getTime() + EVENT_WINDOW_MS);
-  const events = await CalendarEvent.find({ startAt: { $gt: now, $lte: soon } })
+  // Meeting events get configurable reminders from remindMeetings() instead.
+  const events = await CalendarEvent.find({ startAt: { $gt: now, $lte: soon }, type: { $ne: 'meeting' } })
     .select('title tenantId userId startAt')
     .lean();
 
@@ -194,6 +196,43 @@ async function cleanupOldNotifications(now) {
   }
 }
 
+const MEETING_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Configurable meeting reminders (1 day / 1 hour / 30 min / 15 min / custom minutes before).
+ * Each (meeting, reminder, person) fires once thanks to the dedupeKey. If the server was asleep
+ * (free hosting) a reminder still fires late, as long as the meeting has not started yet.
+ */
+async function remindMeetings(now) {
+  const meetings = await Meeting.find({ status: 'scheduled', startAt: { $gt: now, $lte: new Date(now.getTime() + MEETING_HORIZON_MS) } })
+    .select('title tenantId organizerId startAt reminders participants')
+    .limit(500)
+    .lean();
+
+  for (const m of meetings) {
+    const due = (m.reminders || []).filter((r) => now.getTime() >= m.startAt.getTime() - r * 60000);
+    if (!due.length) continue;
+    const mins = Math.max(1, Math.round((m.startAt.getTime() - now.getTime()) / 60000));
+    const label = mins >= 1440 ? `in ${Math.round(mins / 1440)} day(s)` : mins >= 60 ? `in about ${Math.round(mins / 60)} hour(s)` : `in ${mins} minute(s)`;
+    const people = new Set([String(m.organizerId), ...m.participants.filter((p) => p.userId).map((p) => String(p.userId))]);
+    // Only the tightest due reminder is sent now; wider ones that were already missed are skipped.
+    const r = Math.min(...due);
+    for (const userId of people) {
+      await notificationService.createNotification({
+        tenantId: m.tenantId,
+        userId,
+        type: 'reminder',
+        module: 'meeting',
+        title: 'Meeting starting soon',
+        message: `"${m.title}" starts ${label} (${fmtTime(m.startAt)}).`,
+        relatedId: m._id,
+        priority: 'high',
+        dedupeKey: `meeting-remind:${m._id}:${r}:${userId}`,
+      });
+    }
+  }
+}
+
 async function tick() {
   if (mongoose.connection.readyState !== 1) return; // not connected — skip
   try {
@@ -201,6 +240,7 @@ async function tick() {
     await Promise.allSettled([
       remindTaskDeadlines(now),
       remindCalendarEvents(now),
+      remindMeetings(now),
       remindGoalDeadlines(now),
       remindHabits(now),
       cleanupOldNotifications(now),

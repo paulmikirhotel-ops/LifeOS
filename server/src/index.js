@@ -8,6 +8,8 @@ import { env } from './config/env.js';
 import { connectDB, disconnectDB } from './config/db.js';
 import { createApp } from './app.js';
 import { startScheduler, stopScheduler } from './services/scheduler.service.js';
+import { startJobRunner, stopJobRunner } from './services/job.service.js';
+import { registerMeetingJobs } from './services/meetingPipeline.service.js';
 
 const app = createApp();
 
@@ -29,10 +31,15 @@ const server = app.listen(env.port, () => {
 // Reminder scheduler (tick every 60s; safe when the DB is not connected yet).
 startScheduler();
 
+// Meetings: durable background jobs (recording assembly, transcription, AI summary/minutes).
+registerMeetingJobs();
+startJobRunner();
+
 // ── Graceful shutdown ───────────────────────────────────────────────
 async function shutdown(signal) {
   console.log(`[lifeos-api] ${signal} received — shutting down`);
   stopScheduler();
+  stopJobRunner();
   server.close(async () => {
     try {
       await disconnectDB();

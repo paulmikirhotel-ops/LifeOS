@@ -35,6 +35,11 @@ export const PERMISSIONS = {
   'goals.create': 'Create goals',
   'goals.edit': 'Edit goals',
   'goals.delete': 'Delete goals',
+  // meetings
+  'meetings.view': 'View meetings you organize or attend',
+  'meetings.create': 'Schedule meetings',
+  'meetings.edit': 'Run and edit meetings you organize',
+  'meetings.delete': 'Delete meetings you organize',
   // users
   'users.view': 'View tenant members',
   'users.invite': 'Invite members',
@@ -67,9 +72,13 @@ export const ROLE_PERMISSIONS = {
     'schedule.create',
     'schedule.edit',
     'schedule.delete',
+    'meetings.view',
+    'meetings.create',
+    'meetings.edit',
+    'meetings.delete',
     'analytics.view',
   ],
-  viewer: ['tasks.view', 'schedule.view', 'finance.view'],
+  viewer: ['tasks.view', 'schedule.view', 'finance.view', 'meetings.view'],
 };
 
 export const TENANT_ROLES = Object.keys(ROLE_PERMISSIONS); // owner, finance_manager, assistant, viewer

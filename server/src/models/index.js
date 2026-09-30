@@ -20,3 +20,7 @@ export { default as Expense } from './expense.model.js';
 export { default as FinancialCategory } from './financialCategory.model.js';
 export { default as Notification } from './notification.model.js';
 export { default as AuditLog } from './auditLog.model.js';
+export { default as Meeting } from './meeting.model.js';
+export { default as TranscriptSegment } from './transcriptSegment.model.js';
+export { default as ActionItem } from './actionItem.model.js';
+export { default as Job } from './job.model.js';

@@ -44,6 +44,10 @@ export function createApp() {
     rateLimit({
       windowMs: 15 * 60 * 1000,
       limit: 300,
+      // A 2-hour recording sends a chunk every ~10 s plus live-transcript clips; those two
+      // endpoints have their own per-user limiter (see meeting.routes.js) so a long meeting
+      // can't exhaust the shared per-IP budget and lock the user out of the rest of the app.
+      skip: (req) => /^\/meetings\/[a-f0-9]{24}\/(recording\/chunks\/\d+|transcribe-chunk)$/i.test(req.path),
       standardHeaders: 'draft-7',
       legacyHeaders: false,
       message: { success: false, message: 'Too many requests, please try again later', code: 'RATE_LIMITED' },
