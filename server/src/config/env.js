@@ -29,6 +29,19 @@ export const env = {
     .split(',')
     .map((url) => url.trim())
     .filter(Boolean),
+  /**
+   * Canonical public origin of the web app. Meeting invitation links are built
+   * from this (`<appUrl>/meet/<code>`) and it is the host that must be listed in
+   * the Android App Links / iOS Universal Links association files.
+   * Defaults to the first CORS origin, which is already the real app URL.
+   */
+  appUrl: (
+    process.env.APP_URL ||
+    (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0] ||
+    'http://localhost:5173'
+  )
+    .trim()
+    .replace(/\/+$/, ''),
   cookie: {
     // Secure cookies require HTTPS — enabled automatically in production.
     secure: isProd || process.env.COOKIE_SECURE === 'true',

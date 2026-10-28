@@ -1,6 +1,16 @@
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
-import { Meeting, TranscriptSegment, ActionItem, CalendarEvent, Membership, User, Task } from '../models/index.js';
+import {
+  Meeting,
+  MeetingAttendance,
+  TranscriptSegment,
+  ActionItem,
+  CalendarEvent,
+  Membership,
+  User,
+  Task,
+} from '../models/index.js';
+import { newInviteCode, buildInviteUrl } from './meetingInvite.service.js';
 import { env } from '../config/env.js';
 import * as storage from './storage.service.js';
 import * as stt from './stt.service.js';
@@ -122,7 +132,7 @@ function memberRecipients(meeting, actorId) {
   );
 }
 
-function notifyParticipants(meeting, actorId, title, message) {
+function notifyParticipants(meeting, actorId, title, message, { priority = 'normal', action = null } = {}) {
   for (const userId of memberRecipients(meeting, actorId)) {
     notificationService.notify({
       tenantId: meeting.tenantId,
@@ -132,7 +142,13 @@ function notifyParticipants(meeting, actorId, title, message) {
       title,
       message,
       relatedId: meeting._id,
-      priority: 'normal',
+      priority,
+      // `action` makes a meeting notification immediately actionable — the bell
+      // renders a "Join meeting" button that deep-links into the meeting room.
+      data: {
+        meetingId: String(meeting._id),
+        ...(action ? { action } : {}),
+      },
     });
   }
 }
@@ -309,6 +325,30 @@ export async function create(user, body) {
   const occurrences = expandRecurrence({ startAt, endAt, timezone: body.timezone || 'UTC', recurrence });
   const seriesId = occurrences.length > 1 ? new mongoose.Types.ObjectId() : undefined;
 
+  // Access defaults keep the module safe: an existing-style meeting with no
+  // `access` block stays visible only to signed-in LifeOS users.
+  const access = {
+    mode: ['public', 'authenticated', 'restricted'].includes(body.access?.mode)
+      ? body.access.mode
+      : 'authenticated',
+    allowGuests: Boolean(body.access?.allowGuests),
+    requireApproval: Boolean(body.access?.requireApproval),
+    showParticipants: body.access?.showParticipants !== false,
+    externalUrl: null,
+  };
+  if (body.access?.externalUrl) {
+    const url = String(body.access.externalUrl).trim();
+    if (!/^https?:\/\//i.test(url)) {
+      throw ApiError.badRequest('The external meeting link must start with http:// or https://');
+    }
+    access.externalUrl = url.slice(0, 1000);
+  }
+
+  /**
+   * Every occurrence gets its OWN invitation code. They are independent
+   * meetings (that is how the rest of the module treats a recurrence), so
+   * sharing next week's occurrence must not expose this week's.
+   */
   const docs = occurrences.map((o) => ({
     tenantId: user.tenantId,
     organizerId: user.id,
@@ -324,9 +364,22 @@ export async function create(user, body) {
     reminders: body.reminders,
     participants,
     seriesId,
+    access,
+    invite: { code: newInviteCode(), version: 1, createdAt: new Date() },
   }));
 
-  const meetings = await Meeting.insertMany(docs);
+  // A code collision would abort the whole insert, so retry once with fresh
+  // codes before surfacing an error.
+  let meetings;
+  try {
+    meetings = await Meeting.insertMany(docs);
+  } catch (err) {
+    if (err?.code !== 11000) throw err;
+    docs.forEach((d) => {
+      d.invite = { code: newInviteCode(), version: 1, createdAt: new Date() };
+    });
+    meetings = await Meeting.insertMany(docs);
+  }
   try {
     const events = await CalendarEvent.insertMany(
       meetings.map((m) => ({
@@ -352,11 +405,47 @@ export async function create(user, body) {
     throw err;
   }
 
+  /**
+   * Seed an attendance row for every participant who maps to a real LifeOS user.
+   * This is what makes the "Invitations" view work the moment a meeting is
+   * created, and it is the row the shared-link join flow later UPDATES (rather
+   * than duplicating) when that same person joins.
+   * Names without a userId (external invitees, by email only) are skipped —
+   * they have no account to attach a record to.
+   */
+  const inviteeRows = meetings.flatMap((m) =>
+    (m.participants || [])
+      .filter((p) => p.userId)
+      .map((p) => ({
+        tenantId: m.tenantId,
+        meetingId: m._id,
+        userId: p.userId,
+        name: p.name,
+        email: p.email,
+        role: String(p.userId) === String(m.organizerId) ? 'organizer' : p.role === 'chair' ? 'chair' : 'attendee',
+        joinMethod: 'organizer',
+        attendance: 'invited',
+        response: 'pending',
+        addedBy: user.id,
+      }))
+  );
+  if (inviteeRows.length > 0) {
+    // ordered:false so a single duplicate (already invited) cannot abort the rest.
+    await MeetingAttendance.insertMany(inviteeRows, { ordered: false }).catch(() => {});
+  }
+
   const first = meetings[0];
   notifyParticipants(first, user.id, 'Meeting scheduled', occurrences.length > 1
     ? `"${first.title}" has been scheduled (${occurrences.length} occurrences).`
     : `"${first.title}" has been scheduled.`);
-  return { ...toClient(first), occurrences: occurrences.length };
+  return {
+    ...toClient(first),
+    occurrences: occurrences.length,
+    // The invitation link is returned at creation time so the UI can show it
+    // immediately without a second round-trip.
+    inviteUrl: buildInviteUrl(first.invite.code),
+    inviteCode: first.invite.code,
+  };
 }
 
 export async function update(user, id, patch) {
@@ -407,6 +496,7 @@ export async function remove(user, id, { scope = 'one' } = {}) {
     await Promise.all([
       TranscriptSegment.deleteMany({ tenantId: user.tenantId, meetingId: m._id }),
       ActionItem.deleteMany({ tenantId: user.tenantId, meetingId: m._id }),
+      MeetingAttendance.deleteMany({ tenantId: user.tenantId, meetingId: m._id }),
       removeCalendarEvent(m),
       storage.deletePrefix(storage.keys.prefix(user.tenantId, m._id)).catch((e) => console.error(`[meetings] storage cleanup failed: ${e.message}`)),
     ]);
@@ -426,7 +516,42 @@ export async function start(user, id) {
   meeting.startedAt = new Date();
   await meeting.save();
   audit(user, 'meeting.start', meeting);
-  notifyParticipants(meeting, user.id, 'Meeting started', `"${meeting.title}" is now live.`);
+
+  // People who joined through the shared link are attendance rows, not
+  // necessarily `participants`, so both sets get told the room is open.
+  await MeetingAttendance.updateMany(
+    { meetingId: meeting._id, attendance: { $in: ['invited', 'approved'] } },
+    { $set: { lastSeenAt: new Date() } }
+  );
+
+  notifyParticipants(meeting, user.id, 'Meeting started', `"${meeting.title}" has started. Join now.`, {
+    priority: 'high',
+    action: { label: 'Join meeting', path: `/meetings/${meeting._id}/live` },
+  });
+
+  const attendees = await MeetingAttendance.find({
+    meetingId: meeting._id,
+    userId: { $ne: null },
+  })
+    .select('userId')
+    .lean();
+  const already = new Set(memberRecipients(meeting, user.id));
+  for (const row of attendees) {
+    const uid = String(row.userId);
+    if (uid === String(user.id) || already.has(uid)) continue;
+    notificationService.notify({
+      tenantId: meeting.tenantId,
+      userId: uid,
+      type: 'meeting',
+      module: 'meeting',
+      title: 'Meeting started',
+      message: `"${meeting.title}" has started. Join now.`,
+      relatedId: meeting._id,
+      priority: 'high',
+      data: { meetingId: String(meeting._id), action: { label: 'Join meeting', path: `/meetings/${meeting._id}/live` } },
+    });
+  }
+
   return toClient(meeting);
 }
 
@@ -441,6 +566,12 @@ export async function end(user, id, body = {}) {
   if (body.durationSec) meeting.durationSec = Math.min(body.durationSec, meeting.durationSec + 60);
   await meeting.save();
   audit(user, 'meeting.end', meeting, { durationSec: meeting.durationSec });
+
+  // Close out attendance: anyone still marked invited/approved never showed.
+  await MeetingAttendance.updateMany(
+    { meetingId: meeting._id, attendance: { $in: ['invited', 'approved', 'requested'] } },
+    { $set: { attendance: 'no_show' } }
+  );
 
   // Background processing. The recording is saved first and never depends on AI succeeding.
   const hasAudio = meeting.recording?.status && meeting.recording.status !== 'none';

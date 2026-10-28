@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import * as meetingController from '../controllers/meeting.controller.js';
+import * as inviteController from '../controllers/meetingInvite.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireTenant } from '../middleware/requireTenant.js';
 import { requirePermission } from '../middleware/requirePermission.js';
@@ -141,6 +142,22 @@ const chunkParams = z.object({ id: objectId, index: z.coerce.number().int().min(
 const offsetQuery = z.object({ offsetMs: z.coerce.number().int().min(0).max(24 * 3600 * 1000).default(0) });
 const itemsQuery = z.object({ status: z.enum(ACTION_STATUSES).optional(), mine: z.enum(['true', 'false']).optional() });
 
+// ── invitation-link schemas (Phase 1) ───────────────────────────────────
+
+const accessSchema = z
+  .object({
+    mode: z.enum(['public', 'authenticated', 'restricted']).optional(),
+    allowGuests: z.boolean().optional(),
+    requireApproval: z.boolean().optional(),
+    showParticipants: z.boolean().optional(),
+    // Only http(s) is accepted; the service re-checks before storing.
+    externalUrl: z.union([z.string().url().max(1000), z.literal(''), z.null()]).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'Provide at least one access setting');
+
+const reviewSchema = z.object({ decision: z.enum(['approve', 'decline']) });
+const respondSchema = z.object({ response: z.enum(['accepted', 'declined', 'tentative']) });
+
 // Audio bodies are raw bytes (not JSON) and bounded by MEETING_CHUNK_MAX_MB.
 const rawAudio = express.raw({ type: () => true, limit: env.meetings.chunkMaxBytes });
 
@@ -179,6 +196,8 @@ router.use(authenticate, requireTenant);
 router.get('/capabilities', requirePermission('meetings.view'), meetingController.capabilities);
 router.get('/members', requirePermission('meetings.view'), meetingController.members);
 router.get('/action-items', requirePermission('meetings.view'), validateRequest(itemsQuery, 'query'), meetingController.allActionItems);
+// Meetings this user was invited to and still has to answer.
+router.get('/invitations', requirePermission('meetings.view'), inviteController.myInvitations);
 
 router.get('/', requirePermission('meetings.view'), validateRequest(listQuery, 'query'), meetingController.list);
 router.post('/', requirePermission('meetings.create'), validateRequest(createSchema), meetingController.create);
@@ -186,6 +205,26 @@ router.post('/', requirePermission('meetings.create'), validateRequest(createSch
 router.get('/:id', requirePermission('meetings.view'), meetingController.get);
 router.put('/:id', requirePermission('meetings.edit'), validateRequest(updateSchema), meetingController.update);
 router.delete('/:id', requirePermission('meetings.delete'), validateRequest(deleteQuery, 'query'), meetingController.remove);
+
+// invitation link, access rules & attendance (Phase 1)
+router.get('/:id/invite', requirePermission('meetings.view'), inviteController.inviteInfo);
+router.post('/:id/invite/regenerate', requirePermission('meetings.edit'), inviteController.regenerate);
+router.post('/:id/invite/revoke', requirePermission('meetings.edit'), inviteController.revoke);
+router.patch('/:id/access', requirePermission('meetings.edit'), validateRequest(accessSchema), inviteController.updateAccess);
+
+router.get('/:id/attendance', requirePermission('meetings.view'), inviteController.attendance);
+router.post(
+  '/:id/attendance/:attendanceId/review',
+  requirePermission('meetings.edit'),
+  validateRequest(reviewSchema),
+  inviteController.reviewAttendance
+);
+router.delete('/:id/attendance/:attendanceId', requirePermission('meetings.edit'), inviteController.removeAttendance);
+
+// joining / leaving from inside the app
+router.post('/:id/join', requirePermission('meetings.view'), inviteController.joinMeeting);
+router.post('/:id/respond', requirePermission('meetings.view'), validateRequest(respondSchema), inviteController.respond);
+router.post('/:id/leave', requirePermission('meetings.view'), inviteController.leaveMeeting);
 
 // lifecycle
 router.post('/:id/start', requirePermission('meetings.edit'), meetingController.start);
