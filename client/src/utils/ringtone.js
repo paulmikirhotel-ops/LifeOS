@@ -105,3 +105,6 @@ export function stopRingtone() {
 }
 
 export const ringing = () => current;
+
+/** True while the browser is still keeping sound locked (nobody has touched the page yet). The ring screen shows a hint then. */
+export const audioLocked = () => Boolean(ctx) && ctx.state !== 'running';

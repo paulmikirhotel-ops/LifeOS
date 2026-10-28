@@ -3,6 +3,7 @@ import { useAuth } from './AuthContext.jsx';
 import { connectApi } from '../api/connect.js';
 import { playNotificationChime } from '../utils/notificationSound.js';
 import { kindOfFile } from '../utils/connectFormat.js';
+import { CALL_CHECK_MS, nextIncoming, acceptIncomingEvent } from '../utils/callState.js';
 
 /**
  * LifeOS Connect state: conversations, friends, unread counts and the live events pushed by the server.
@@ -48,16 +49,21 @@ export function ConnectProvider({ children }) {
   const refreshSummary = useCallback(async () => {
     try { const r = await connectApi.summary(); setSummary(r.data); } catch { /* ignore */ }
   }, []);
+  // Calls I am done with (answered, declined, rang out). They never come back on screen, even if a late answer from the server mentions them.
+  const dismissedRef = useRef(new Set());
+  const applyServerIncoming = useCallback((fromServer) => {
+    setIncoming((cur) => nextIncoming({ current: cur, fromServer, dismissed: dismissedRef.current }));
+  }, []);
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshConversations(), refreshFriends(), refreshSummary()]);
     try { const n = await connectApi.notifications(); setNotes(n.data); } catch { /* ignore */ }
     try {
       const r = await connectApi.activeCalls();
-      setIncoming(r.data.incoming || null);
+      applyServerIncoming(r.data.incoming || null);
       setCallByConv((m) => ({ ...m, ...Object.fromEntries([r.data.incoming, r.data.ongoing].filter(Boolean).map((c) => [c.conversationId, c])) }));
     } catch { /* calls are optional */ }
     setReady(true);
-  }, [refreshConversations, refreshFriends, refreshSummary]);
+  }, [refreshConversations, refreshFriends, refreshSummary, applyServerIncoming]);
 
   // Start when signed in, clear when signed out.
   useEffect(() => {
@@ -280,7 +286,7 @@ export function ConnectProvider({ children }) {
         case 'call': {
           const call = ev.call;
           if (!call) break;
-          if (ev.event === 'incoming') { setIncoming(call); setCallByConv((m) => ({ ...m, [call.conversationId]: call })); }
+          if (ev.event === 'incoming') { setIncoming((cur) => acceptIncomingEvent({ current: cur, call, dismissed: dismissedRef.current, myId })); setCallByConv((m) => ({ ...m, [call.conversationId]: call })); }
           else if (ev.event === 'update') setCallByConv((m) => ({ ...m, [call.conversationId]: call }));
           else if (ev.event === 'ended') {
             setIncoming((cur) => (cur?.id === call.id ? null : cur));
@@ -305,6 +311,34 @@ export function ConnectProvider({ children }) {
       Object.values(timers).forEach(clearTimeout);
     };
   }, [myId, patchMessages, bumpConversation, refreshConversations, refreshAll, afterFriendChange, markRead]);
+
+  // Safety net for the live connection: if it is slow, blocked or asleep, a ringing call is still found within a few seconds.
+  // (A phone that is closed or in the background is reached by the push notification instead.)
+  useEffect(() => {
+    if (!myId || !summary.callsEnabled) return undefined;
+    let stopped = false;
+    const check = async () => {
+      if (stopped || document.hidden) return;
+      try {
+        const r = await connectApi.activeCalls();
+        if (stopped) return;
+        applyServerIncoming(r.data.incoming || null);
+        setCallByConv((m) => ({ ...m, ...Object.fromEntries([r.data.incoming, r.data.ongoing].filter(Boolean).map((c) => [c.conversationId, c])) }));
+      } catch { /* the next check will try again */ }
+    };
+    const timer = setInterval(check, CALL_CHECK_MS);
+    const wake = () => { if (!document.hidden) check(); };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+    window.addEventListener('online', wake);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('focus', wake);
+      window.removeEventListener('online', wake);
+    };
+  }, [myId, summary.callsEnabled, applyServerIncoming]);
 
   const messagesRef = useRef({});
   messagesRef.current = messagesBy;
@@ -351,8 +385,8 @@ export function ConnectProvider({ children }) {
       setCallByConv((m) => ({ ...m, [conversationId]: r.data.call }));
       return r.data.call;
     },
-    decline: async (call) => { setIncoming((cur) => (cur?.id === call.id ? null : cur)); try { await connectApi.declineCall(call.id); } catch { /* it may already be over */ } },
-    dismiss: (call) => setIncoming((cur) => (cur?.id === call.id ? null : cur)),
+    decline: async (call) => { dismissedRef.current.add(call.id); setIncoming((cur) => (cur?.id === call.id ? null : cur)); try { await connectApi.declineCall(call.id); } catch { /* it may already be over */ } },
+    dismiss: (call) => { dismissedRef.current.add(call.id); setIncoming((cur) => (cur?.id === call.id ? null : cur)); },
     load: async (conversationId) => {
       try {
         const r = await connectApi.conversationCall(conversationId);

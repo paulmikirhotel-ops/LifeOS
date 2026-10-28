@@ -49,6 +49,7 @@ function toDto(call, conv, callerName) {
     title: group ? conv.name || 'Group call' : callerName,
     startedAt: call.startedAt || null,
     ringingUntil: new Date(new Date(call.createdAt).getTime() + RING_MS),
+    ringLeftMs: Math.max(0, new Date(call.createdAt).getTime() + RING_MS - Date.now()), // ringing time left, on the server's clock
     joined: joinedOf(call).map((p) => String(p.userId)),
   };
 }
