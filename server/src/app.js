@@ -27,6 +27,7 @@ export function createApp() {
     cors({
       origin: env.clientUrls,
       credentials: true,
+      exposedHeaders: ['Idempotent-Replay', 'Retry-After'],
     })
   );
 
