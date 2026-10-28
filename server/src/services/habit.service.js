@@ -1,6 +1,7 @@
 import { ApiError } from '../utils/ApiError.js';
 import { Habit, HabitLog } from '../models/index.js';
 import { assertObjectId } from '../utils/objectId.js';
+import * as goalService from './goal.service.js';
 import * as notificationService from './notification.service.js';
 
 function getLocalDateString(date = new Date()) {
@@ -96,6 +97,7 @@ export async function list(user) {
 }
 
 export async function create(user, body) {
+  await goalService.assertGoalInTenant(user, body.goalId);
   return Habit.create({
     ...body,
     tenantId: user.tenantId,
@@ -105,6 +107,7 @@ export async function create(user, body) {
 
 export async function update(user, id, patch) {
   assertObjectId(id);
+  await goalService.assertGoalInTenant(user, patch.goalId);
   const habit = await Habit.findOneAndUpdate(
     { _id: id, tenantId: user.tenantId, userId: user.id },
     { $set: patch },

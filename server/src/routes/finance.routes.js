@@ -7,6 +7,8 @@ import { requirePermission } from '../middleware/requirePermission.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import { multerUpload } from '../services/file.service.js';
 
+import { cacheResponse } from '../utils/cache.js';
+
 const router = Router();
 
 // --- SCHEMAS ---
@@ -54,8 +56,8 @@ const paginationSchema = z.object({
 // --- ROUTES ---
 
 // Summary & Reports
-router.get('/summary', authenticate, requireTenant, requirePermission('finance.view'), financeController.getSummary);
-router.get('/reports', authenticate, requireTenant, requirePermission('finance.reports'), financeController.getReports);
+router.get('/summary', authenticate, requireTenant, requirePermission('finance.view'), cacheResponse(60), financeController.getSummary);
+router.get('/reports', authenticate, requireTenant, requirePermission('finance.reports'), cacheResponse(60), financeController.getReports);
 router.get('/audit', authenticate, requireTenant, requirePermission('finance.reports'), financeController.listAudit);
 
 // Categories

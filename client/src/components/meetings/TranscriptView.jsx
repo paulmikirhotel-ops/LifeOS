@@ -131,7 +131,7 @@ export default function TranscriptView({
                 key={s.seq}
                 ref={(el) => (el ? refs.current.set(s.seq, el) : refs.current.delete(s.seq))}
                 style={{ contentVisibility: 'auto', containIntrinsicSize: '0 64px' }}
-                className={`group rounded-xl px-3 py-2.5 transition-colors ${activeSeq === s.seq ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+                className={`group rounded-xl px-3 py-2.5 transition-colors ${live ? 'line-in' : ''} ${activeSeq === s.seq ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
               >
                 <div className="flex items-center gap-2 text-xs">
                   <button

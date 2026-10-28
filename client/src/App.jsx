@@ -1,6 +1,8 @@
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import AppRoutes from './routes/AppRoutes.jsx';
+import InstallPrompt from './pwa/InstallPrompt.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { TenantProvider } from './context/TenantContext.jsx';
 import { ThemeProvider } from './context/ThemeContext.jsx';
@@ -13,7 +15,10 @@ export default function App() {
         <ToastProvider>
           <AuthProvider>
             <TenantProvider>
-              <AppRoutes />
+              <ErrorBoundary>
+                <AppRoutes />
+                <InstallPrompt />
+              </ErrorBoundary>
             </TenantProvider>
           </AuthProvider>
         </ToastProvider>

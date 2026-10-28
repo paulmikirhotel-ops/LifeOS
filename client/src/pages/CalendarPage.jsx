@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, 
-  Clock, MapPin, X, Layers
+  MapPin, Layers, CheckSquare
 } from 'lucide-react';
 import { 
   format, addMonths, subMonths, startOfMonth, endOfMonth, 
@@ -13,11 +13,17 @@ import { useApi } from '../hooks/useApi.js';
 import api from '../api/client.js';
 import { formatApiError } from '../utils/errors.js';
 import { useToast } from '../context/ToastContext.jsx';
-import { 
-  Button, Card, Modal, Input, Textarea, 
-  Select, Spinner, Badge 
+import {
+  Button, Card, Modal, Input, Textarea,
+  Select, Badge, ErrorState, Skeleton, IconButton
 } from '../components/ui.jsx';
 import { useForm } from 'react-hook-form';
+
+const TONE = {
+  event: { dot: 'bg-blue-500', chip: 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800', card: 'border-blue-100 bg-blue-50/50 dark:bg-blue-900/10 dark:border-blue-900/30', badge: 'info' },
+  block: { dot: 'bg-amber-500', chip: 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800', card: 'border-amber-100 bg-amber-50/50 dark:bg-amber-900/10 dark:border-amber-900/30', badge: 'warning' },
+  task: { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800', card: 'border-emerald-100 bg-emerald-50/50 dark:bg-emerald-900/10 dark:border-emerald-900/30', badge: 'success' },
+};
 
 export default function CalendarPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -32,18 +38,23 @@ export default function CalendarPage() {
 
   // Fetch calendar events and schedule blocks for the month range
   const rangeParams = `from=${format(startDate, 'yyyy-MM-dd')}&to=${format(endDate, 'yyyy-MM-dd')}`;
-  const { data: eventsData, loading, reload: reloadEvents } = useApi(`/calendar?${rangeParams}`, {
+  const { data: eventsData, loading, error, reload: reloadEvents } = useApi(`/calendar?${rangeParams}`, {
     deps: [currentMonth]
   });
   const { data: blocksData, reload: reloadBlocks } = useApi(`/schedules?${rangeParams}`, {
     deps: [currentMonth]
   });
 
+  // Tasks with a due date show up too (a failed or forbidden request simply shows none).
+  const { data: tasksData, reload: reloadTasks } = useApi(`/calendar/tasks?${rangeParams}`, {
+    deps: [currentMonth]
+  });
+
   const scheduleData = useMemo(
-    () => ({ events: eventsData?.items || [], blocks: blocksData?.items || [] }),
-    [eventsData, blocksData]
+    () => ({ events: eventsData?.items || [], blocks: blocksData?.items || [], tasks: tasksData?.items || [] }),
+    [eventsData, blocksData, tasksData]
   );
-  const reload = () => { reloadEvents(); reloadBlocks(); };
+  const reload = () => { reloadEvents(); reloadBlocks(); reloadTasks(); };
 
   const calendarDays = useMemo(() => {
     return eachDayOfInterval({ start: startDate, end: endDate });
@@ -67,6 +78,14 @@ export default function CalendarPage() {
       const dateKey = block.date;
       if (!map[dateKey]) map[dateKey] = [];
       map[dateKey].push({ ...block, type: 'block' });
+    });
+
+    // Process tasks due (bucketed by the viewer's local day)
+    (scheduleData.tasks || []).forEach(task => {
+      if (!task.dueDate) return;
+      const dateKey = format(parseISO(task.dueDate), 'yyyy-MM-dd');
+      if (!map[dateKey]) map[dateKey] = [];
+      map[dateKey].push({ ...task, type: 'task' });
     });
 
     return map;
@@ -96,147 +115,155 @@ export default function CalendarPage() {
     }
   };
 
+  const selectedKey = format(selectedDate, 'yyyy-MM-dd');
+  const selectedItems = eventsByDay[selectedKey] || [];
+  const timeOf = (item) => item.type === 'event'
+    ? format(parseISO(item.startAt), 'h:mm a')
+    : item.type === 'task'
+    ? (() => { const d = parseISO(item.dueDate); return d.getHours() || d.getMinutes() ? format(d, 'h:mm a') : 'Due'; })()
+    : `${Math.floor((item.startMin || 0) / 60)}:${((item.startMin || 0) % 60).toString().padStart(2, '0')}`;
+
   return (
-    <div className="flex flex-col lg:flex-row gap-8 h-[calc(100vh-160px)]">
-      {/* Calendar Grid */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold dark:text-white truncate">{format(currentMonth, 'MMMM yyyy')}</h1>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={prevMonth} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-500 transition-colors">
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <button onClick={() => setCurrentMonth(new Date())} className="px-3 py-1.5 text-sm font-bold text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors">
-              Today
-            </button>
-            <button onClick={nextMonth} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-500 transition-colors">
-              <ChevronRight className="w-5 h-5" />
-            </button>
+    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 lg:items-start">
+      {/* Month grid */}
+      <section className="flex-1 flex flex-col min-w-0" aria-label="Calendar">
+        <header className="flex flex-row items-center justify-between gap-3 mb-4 sm:mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white truncate" aria-live="polite">{format(currentMonth, 'MMMM yyyy')}</h1>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <IconButton icon={ChevronLeft} label="Previous month" onClick={prevMonth} className="!text-slate-500" />
+            <Button variant="soft" size="sm" onClick={() => { setCurrentMonth(new Date()); setSelectedDate(new Date()); }}>Today</Button>
+            <IconButton icon={ChevronRight} label="Next month" onClick={nextMonth} className="!text-slate-500" />
           </div>
         </header>
 
-        <Card className="flex-1 overflow-hidden flex flex-col">
-          <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-              <div key={d} className="py-2 text-center text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">{d}</div>
-            ))}
-          </div>
-          <div className="flex-1 grid grid-cols-7 grid-rows-6 min-w-0">
-            {calendarDays.map((day, idx) => {
-              const dateKey = format(day, 'yyyy-MM-dd');
-              const dayEvents = eventsByDay[dateKey] || [];
-              const isSelected = isSameDay(day, selectedDate);
-              const isToday = isSameDay(day, new Date());
-              const isCurrentMonth = isSameMonth(day, monthStart);
+        {error && !eventsData ? (
+          <Card><ErrorState title="Calendar couldn't load" details={error} onRetry={reload} /></Card>
+        ) : (
+          <Card className="overflow-hidden flex flex-col">
+            <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                <div key={d} className="py-2 text-center text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  <span className="sm:hidden" aria-hidden="true">{d[0]}</span><span className="hidden sm:inline">{d}</span><span className="sr-only sm:hidden">{d}</span>
+                </div>
+              ))}
+            </div>
+            <div className={`grid grid-cols-7 min-w-0 transition-opacity ${loading ? 'opacity-60' : ''}`} role="grid" aria-label={format(currentMonth, 'MMMM yyyy')}>
+              {calendarDays.map((day) => {
+                const dateKey = format(day, 'yyyy-MM-dd');
+                const dayEvents = eventsByDay[dateKey] || [];
+                const isSelected = isSameDay(day, selectedDate);
+                const isToday = isSameDay(day, new Date());
+                const isCurrentMonth = isSameMonth(day, monthStart);
 
-              return (
-                <div 
-                  key={idx}
-                  onClick={() => onDateClick(day)}
-                  className={`
-                    min-h-[60px] sm:min-h-[80px] p-1 sm:p-2 border-r border-b border-slate-100 dark:border-slate-800 cursor-pointer transition-all
-                    ${!isCurrentMonth ? 'bg-slate-50/50 dark:bg-slate-900/20' : ''}
-                    ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/10 ring-1 ring-inset ring-indigo-500/50' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}
-                  `}
-                >
-                  <div className="flex justify-between items-start mb-1">
+                return (
+                  <button
+                    key={dateKey}
+                    type="button"
+                    onClick={() => onDateClick(day)}
+                    aria-pressed={isSelected}
+                    aria-label={`${format(day, 'EEEE, MMMM d')}${dayEvents.length ? `, ${dayEvents.length} item${dayEvents.length > 1 ? 's' : ''}` : ''}`}
+                    className={`
+                      relative min-h-14 sm:min-h-24 p-1 sm:p-2 border-r border-b border-slate-100 dark:border-slate-800 text-left flex flex-col min-w-0 transition-colors
+                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500
+                      ${!isCurrentMonth ? 'bg-slate-50/60 dark:bg-slate-900/30' : ''}
+                      ${isSelected ? 'bg-indigo-50/70 dark:bg-indigo-500/10 ring-1 ring-inset ring-indigo-500/60' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}
+                    `}
+                  >
                     <span className={`
-                      text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full
-                      ${isToday ? 'bg-indigo-600 text-white' : isCurrentMonth ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-700'}
+                      text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full flex-shrink-0
+                      ${isToday ? 'bg-indigo-600 text-white' : isCurrentMonth ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'}
                     `}>
                       {format(day, 'd')}
                     </span>
-                  </div>
-                  <div className="space-y-1">
-                    {dayEvents.slice(0, 3).map((item, i) => (
-                      <div 
-                        key={i} 
-                        className={`text-[9px] px-1.5 py-0.5 rounded border truncate ${item.type === 'event' ? 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' : 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800'}`}
-                      >
-                        {item.title}
-                      </div>
-                    ))}
-                    {dayEvents.length > 3 && (
-                      <div className="text-[9px] text-slate-400 font-bold pl-1">+{dayEvents.length - 3} more</div>
+                    {/* Phones: dots (no room for text). Larger screens: event chips. */}
+                    {dayEvents.length > 0 && (
+                      <span className="sm:hidden flex gap-0.5 mt-1 px-0.5" aria-hidden="true">
+                        {dayEvents.slice(0, 3).map((item, i) => (
+                          <span key={i} className={`w-1.5 h-1.5 rounded-full ${TONE[item.type].dot}`} />
+                        ))}
+                      </span>
                     )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      </div>
+                    <span className="hidden sm:block mt-1 space-y-1 w-full">
+                      {dayEvents.slice(0, 2).map((item, i) => (
+                        <span
+                          key={i}
+                          className={`block text-[10px] px-1.5 py-0.5 rounded border truncate ${TONE[item.type].chip}`}
+                        >
+                          {item.title}
+                        </span>
+                      ))}
+                      {dayEvents.length > 2 && <span className="block text-[10px] text-slate-400 font-bold pl-1">+{dayEvents.length - 2} more</span>}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+      </section>
 
-      {/* Detail Panel */}
-      <aside className="w-full lg:w-80 flex flex-col">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-bold dark:text-white">Day Detail</h2>
+      {/* Day detail */}
+      <aside className="w-full lg:w-80 flex-shrink-0 flex flex-col" aria-label="Day detail">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">Day Detail</h2>
           <Button size="sm" icon={Plus} onClick={() => setIsModalOpen(true)}>Add Event</Button>
         </div>
-        <Card className="flex-1 p-6 flex flex-col space-y-6">
-          <div className="text-center pb-6 border-b border-slate-100 dark:border-slate-800">
-            <p className="text-sm font-bold text-indigo-600 uppercase tracking-widest">{format(selectedDate, 'EEEE')}</p>
-            <p className="text-3xl font-black dark:text-white">{format(selectedDate, 'MMMM d')}</p>
+        <Card className="p-5 sm:p-6 flex flex-col gap-5">
+          <div className="text-center pb-5 border-b border-slate-100 dark:border-slate-800">
+            <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">{format(selectedDate, 'EEEE')}</p>
+            <p className="text-3xl font-black text-slate-900 dark:text-white">{format(selectedDate, 'MMMM d')}</p>
           </div>
-          
-          <div className="flex-1 overflow-y-auto space-y-4">
-            {eventsByDay[format(selectedDate, 'yyyy-MM-dd')]?.length > 0 ? (
-              eventsByDay[format(selectedDate, 'yyyy-MM-dd')].map((item, i) => (
-                <div key={i} className="flex gap-4 group">
-                  <div className="text-[10px] font-bold text-slate-400 w-12 pt-1 uppercase">
-                    {item.type === 'event' 
-                      ? format(parseISO(item.startAt), 'h:mm a') 
-                      : `${Math.floor(item.startMin/60)}:${(item.startMin%60).toString().padStart(2, '0')}`
-                    }
-                  </div>
-                  <div className={`flex-1 p-3 rounded-xl border ${item.type === 'event' ? 'border-blue-100 bg-blue-50/50 dark:bg-blue-900/10 dark:border-blue-900/30' : 'border-amber-100 bg-amber-50/50 dark:bg-amber-900/10 dark:border-amber-900/30'}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-xs font-bold dark:text-white">{item.title}</p>
-                      <Badge variant={item.type === 'event' ? 'info' : 'warning'} className="text-[8px]">{item.meetingId ? 'meeting' : item.type}</Badge>
+
+          {loading && !eventsData ? (
+            <div className="space-y-3"><Skeleton className="h-14 w-full" /><Skeleton className="h-14 w-full" /></div>
+          ) : selectedItems.length > 0 ? (
+            <ul className="space-y-3 lg:max-h-[50vh] lg:overflow-y-auto">
+              {selectedItems.map((item, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="text-[11px] font-bold text-slate-400 w-14 pt-3 uppercase tabular-nums flex-shrink-0">{timeOf(item)}</span>
+                  <div className={`flex-1 min-w-0 p-3 rounded-xl border ${TONE[item.type].card}`}>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white break-words min-w-0">{item.title}</p>
+                      <Badge variant={TONE[item.type].badge} className="text-[10px] flex-shrink-0">{item.meetingId ? 'meeting' : item.type === 'task' ? 'due' : item.type}</Badge>
                     </div>
-                    {item.location && <div className="flex items-center gap-1 text-[10px] text-slate-500"><MapPin className="w-2 h-2" />{item.location}</div>}
-                    {item.category && <div className="flex items-center gap-1 text-[10px] text-slate-500"><Layers className="w-2 h-2" />{item.category}</div>}
-                    {item.meetingId && <Link to={`/meetings/${item.meetingId}`} className="inline-block mt-1 text-[10px] font-bold text-indigo-600 hover:underline">Open meeting →</Link>}
+                    {item.location && <div className="flex items-center gap-1 text-xs text-slate-500"><MapPin className="w-3 h-3" aria-hidden="true" />{item.location}</div>}
+                    {item.category && <div className="flex items-center gap-1 text-xs text-slate-500"><Layers className="w-3 h-3" aria-hidden="true" />{item.category}</div>}
+                    {item.type === 'task' && <Link to="/tasks" className="inline-flex items-center min-h-8 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"><CheckSquare className="w-3 h-3 mr-1" aria-hidden="true" />Open tasks →</Link>}
+                    {item.meetingId && <Link to={`/meetings/${item.meetingId}`} className="inline-flex items-center min-h-8 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline">Open meeting →</Link>}
                   </div>
-                </div>
-              ))
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center opacity-50 py-10">
-                <CalendarIcon className="w-10 h-10 text-slate-300 mb-2" />
-                <p className="text-xs font-medium text-slate-500">No events scheduled</p>
-              </div>
-            )}
-          </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="flex flex-col items-center justify-center text-center py-8">
+              <div className="mb-3 w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800 text-slate-300 dark:text-slate-600 flex items-center justify-center"><CalendarIcon className="w-6 h-6" aria-hidden="true" /></div>
+              <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Nothing scheduled</p>
+              <p className="text-xs text-slate-400 mt-0.5">Add an event to plan this day.</p>
+            </div>
+          )}
         </Card>
       </aside>
 
-      {/* Create Event Modal */}
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        title={`New Event — ${format(selectedDate, 'MMM d')}`}
-      >
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`New Event — ${format(selectedDate, 'MMM d')}`}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <Input label="Event Title" placeholder="What's happening?" {...register('title', { required: true })} />
+          <Input label="Event Title" placeholder="What's happening?" data-autofocus {...register('title', { required: true })} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input label="Start Time" type="time" {...register('startTime', { required: true })} />
             <Input label="End Time" type="time" {...register('endTime', { required: true })} />
           </div>
           <Input label="Location" placeholder="Where? (Optional)" {...register('location')} />
-          <Select 
-            label="Category" 
+          <Select
+            label="Category"
             options={[
-              {value: 'work', label: 'Work'}, 
-              {value: 'personal', label: 'Personal'}, 
-              {value: 'study', label: 'Study'}, 
-              {value: 'other', label: 'Other'}
-            ]} 
+              { value: 'work', label: 'Work' },
+              { value: 'personal', label: 'Personal' },
+              { value: 'study', label: 'Study' },
+              { value: 'other', label: 'Other' },
+            ]}
             {...register('category')}
           />
           <Textarea label="Description" placeholder="Notes..." {...register('description')} />
-          <div className="flex justify-end gap-3 pt-4">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-4">
             <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Cancel</Button>
             <Button type="submit">Create Event</Button>
           </div>

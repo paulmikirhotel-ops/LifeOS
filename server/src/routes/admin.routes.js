@@ -18,4 +18,8 @@ router.patch('/users/:userId/status', validateRequest(statusSchema), adminContro
 router.get('/tenants', adminController.listTenants);
 router.patch('/tenants/:tenantId/status', validateRequest(statusSchema), adminController.setTenantStatus);
 
+// Connect reports (people reporting a person or message). Platform admins only.
+router.get('/connect-reports', adminController.listConnectReports);
+router.patch('/connect-reports/:id', validateRequest(z.object({ status: z.enum(['open', 'reviewed', 'dismissed']) })), adminController.setConnectReportStatus);
+
 export default router;

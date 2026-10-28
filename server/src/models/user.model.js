@@ -19,8 +19,20 @@ const userSchema = new mongoose.Schema(
     refreshTokenHash: { type: String, select: false },
     refreshTokenExpiresAt: { type: Date },
 
+    // Connect: may other LifeOS users find this person by name or e-mail? (default yes; the user can switch it off)
+    discoverable: { type: Boolean, default: true },
+
     lastLoginAt: { type: Date },
     deletedAt: { type: Date },
+
+    // Opt-in: allow LifeOS to send a short summary of the user's own data to the AI provider
+    // to write briefing / review sentences. Off until the user turns it on.
+    aiInsights: { type: Boolean, default: false },
+
+    // Opt-in: email the weekly report every Monday. weeklyDigestSentFor is the Monday ('YYYY-MM-DD') of
+    // the last week already emailed, so a restart or a second server can never send the same week twice.
+    weeklyDigest: { type: Boolean, default: false },
+    weeklyDigestSentFor: { type: String },
 
     // Personal notification preferences (per user, not tenant data).
     notificationPrefs: {

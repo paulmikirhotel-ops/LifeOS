@@ -19,3 +19,8 @@ export async function removeGoal(req, res) {
   await goalService.remove(req.user, req.params.id);
   res.json({ success: true, data: { message: 'Goal removed' } });
 }
+
+export async function goalOverview(req, res) {
+  const data = await goalService.overview(req.user, req.params.id);
+  res.json({ success: true, data });
+}

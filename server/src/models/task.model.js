@@ -32,6 +32,8 @@ const taskSchema = new mongoose.Schema(
       },
     ],
     notes: { type: String },
+    goalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Goal', index: true },
+    milestoneId: { type: mongoose.Schema.Types.ObjectId },
     completedAt: { type: Date },
   },
   { timestamps: true }

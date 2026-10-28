@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Play, Pencil, XCircle, Trash2, Download, Share2, RefreshCw, Clock, MapPin, Users, Pause, ExternalLink, Save, Sparkles } from 'lucide-react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Video, ChevronLeft, Play, Pencil, XCircle, Trash2, Download, Share2, RefreshCw, Clock, MapPin, Users, Pause, ExternalLink, Save, Sparkles } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Spinner, Textarea, Input } from '../../components/ui.jsx';
 import StatusBadge from '../../components/meetings/StatusBadge.jsx';
 import ProcessingPanel from '../../components/meetings/ProcessingPanel.jsx';
@@ -10,6 +10,8 @@ import ActionItemsList from '../../components/meetings/ActionItemsList.jsx';
 import AskMeeting from '../../components/meetings/AskMeeting.jsx';
 import ExportMenu from '../../components/meetings/ExportMenu.jsx';
 import ShareDialog from '../../components/meetings/ShareDialog.jsx';
+import InviteLinkCard from '../../components/meetings/InviteLinkCard.jsx';
+import SendMinutesCard from '../../components/meetings/SendMinutesCard.jsx';
 import ConfirmDialog from '../../components/meetings/ConfirmDialog.jsx';
 import MiniMarkdown from '../../components/meetings/MiniMarkdown.jsx';
 import { meetingsApi } from '../../api/meetings.js';
@@ -36,6 +38,7 @@ const isUrl = (v) => /^https?:\/\//i.test(v || '');
 export default function MeetingDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const { can } = useTenant();
   const { addToast } = useToast();
@@ -86,7 +89,7 @@ export default function MeetingDetailsPage() {
   useEffect(() => { if (meeting) setNotes(meeting.notes || ''); }, [meeting?.notes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll while background processing is running.
-  const processing = meeting && (['transcript', 'summary', 'minutes', 'actionItems'].some((k) => isActive(meeting.processing?.[k])) || meeting.recording?.status === 'uploading');
+  const processing = meeting && (['transcript', 'summary', 'minutes', 'actionItems'].some((k) => isActive(meeting.processing?.[k])) || meeting.recording?.status === 'uploading' || (meeting.status === 'completed' && meeting.recording?.status === 'recording'));
   useEffect(() => {
     if (!processing) return undefined;
     const t = setInterval(() => document.visibilityState === 'visible' && load(), 4000);
@@ -198,6 +201,9 @@ export default function MeetingDetailsPage() {
 
   const m = meeting;
   const manage = m.canManage;
+  // The built-in video room is used when it is set up and the organizer hasn't attached their own meeting URL.
+  const externalUrl = /^https?:\/\/\S+$/i.test((m.location || '').trim());
+  const nativeRoom = feat.video && !externalUrl;
   const ai = feat.ai;
 
   // Show only what can work here, or what this meeting already has.
@@ -223,7 +229,7 @@ export default function MeetingDetailsPage() {
 
   return (
     <div className="space-y-5 pb-28 md:pb-8">
-      <Link to="/meetings" className="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-indigo-600"><ChevronLeft className="w-4 h-4" aria-hidden="true" /> Meetings</Link>
+      <Link to="/meetings" className="inline-flex items-center gap-1 min-h-10 text-sm font-semibold text-slate-500 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 rounded-lg"><ChevronLeft className="w-4 h-4" aria-hidden="true" /> Meetings</Link>
 
       <header className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -236,7 +242,7 @@ export default function MeetingDetailsPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {manage && ['scheduled', 'live'].includes(m.status) && <Button icon={Play} className="min-h-[44px]" onClick={() => navigate(`/meetings/${id}/live`)}>{m.status === 'live' ? 'Join' : 'Start'}</Button>}
+            {manage && ['scheduled', 'live'].includes(m.status) && <Button icon={Play} className="min-h-[44px]" onClick={() => navigate(nativeRoom ? `/meetings/${id}/room` : `/meetings/${id}/live`)}>{m.status === 'live' ? 'Join' : 'Start'}</Button>}
             {manage && m.status === 'scheduled' && <Link to={`/meetings/${id}/edit`}><Button variant="secondary" icon={Pencil} className="min-h-[44px]">Edit</Button></Link>}
             {manage && m.status === 'scheduled' && <Button variant="secondary" icon={XCircle} onClick={() => setConfirm('cancel')} className="min-h-[44px]">Cancel</Button>}
             {m.status === 'completed' && <Button variant="secondary" icon={Download} onClick={() => setExportOpen(true)} className="min-h-[44px]">Download</Button>}
@@ -244,7 +250,22 @@ export default function MeetingDetailsPage() {
             {manage && m.status !== 'live' && can('meetings.delete') && <Button variant="ghost" icon={Trash2} className="text-red-600 min-h-[44px]" onClick={() => { setScope('one'); setConfirm('delete'); }}>Delete</Button>}
           </div>
         </div>
-        <ProcessingPanel meeting={m} canManage={manage} onRetry={(stage) => run(() => meetingsApi.process(id, stage), 'Processing restarted')} />
+        {!manage && ['scheduled', 'live'].includes(m.status) && (
+          <section aria-label="Join meeting" className={`rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center gap-3 ${params.get('join') ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 ring-2 ring-indigo-300/50' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'}`}>
+            <div className="min-w-0 flex-1">
+              <p className="font-bold text-slate-900 dark:text-white">{m.status === 'live' ? 'This meeting is live' : 'Ready to join?'}</p>
+              <p className="text-sm text-slate-500">{nativeRoom ? (m.status === 'live' ? 'Opens the LifeOS video room.' : "You can join once the organizer starts the meeting.") : externalUrl ? 'Opens the meeting room set up by the organizer.' : "The organizer hasn't added a meeting room link yet."}</p>
+            </div>
+            {nativeRoom
+              ? <Link to={`/meetings/${id}/room`} className="w-full sm:w-auto"><Button icon={Video} className="w-full min-h-[48px]">Join Meeting</Button></Link>
+              : externalUrl
+              ? <a href={m.location.trim()} target="_blank" rel="noopener noreferrer" className="w-full sm:w-auto"><Button icon={Video} className="w-full min-h-[48px]">Join Meeting</Button></a>
+              : <Button icon={Video} disabled className="w-full sm:w-auto min-h-[48px]">Join Meeting</Button>}
+          </section>
+        )}
+        {manage && ['scheduled', 'live'].includes(m.status) && <InviteLinkCard key={m.id} meeting={m} initialInvite={location.state?.invite} />}
+        {manage && m.status === 'completed' && <SendMinutesCard key={m.id} meeting={m} />}
+        <ProcessingPanel meeting={m} canManage={manage} speechToText={feat.transcription} onRetry={(stage) => run(() => meetingsApi.process(id, stage), 'Processing restarted')} />
       </header>
 
       <div role="tablist" aria-label="Meeting sections" className="flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800">
@@ -258,7 +279,7 @@ export default function MeetingDetailsPage() {
 
       <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} className="min-h-[200px]">
         {activeTab === 'overview' && (
-          <div className="grid gap-5 lg:grid-cols-[1fr_24rem]">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
             <div className="space-y-5">
               <Card className="p-5 space-y-3 text-sm">
                 <div className="flex flex-wrap gap-2"><Badge variant="info">{typeLabel(m.type)}</Badge><Badge variant="info">{m.timezone}</Badge></div>
@@ -267,7 +288,7 @@ export default function MeetingDetailsPage() {
                 {m.agenda && <div><p className="font-bold text-slate-900 dark:text-white mb-1">Agenda</p><p className="whitespace-pre-wrap text-slate-700 dark:text-slate-300">{m.agenda}</p></div>}
               </Card>
               {(feat.ai || hasSummary) && <Card className="p-5">
-                <div className="mb-2 flex items-center justify-between"><h2 className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><Sparkles className="w-4 h-4 text-indigo-500" aria-hidden="true" /> AI summary</h2><button type="button" className="text-xs font-semibold text-indigo-600 hover:underline" onClick={() => changeTab('summary')}>Full summary</button></div>
+                <div className="mb-2 flex items-center justify-between"><h2 className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><Sparkles className="w-4 h-4 text-indigo-500" aria-hidden="true" /> AI summary</h2><button type="button" className="inline-flex items-center min-h-10 px-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline" onClick={() => changeTab('summary')}>Full summary</button></div>
                 {m.summary?.executiveSummary ? <p className="text-sm text-slate-700 dark:text-slate-300">{m.summary.executiveSummary}</p> : <p className="text-sm text-slate-500">{m.status === 'completed' ? 'No summary yet.' : 'A summary is generated after the meeting ends.'}</p>}
               </Card>}
               {m.notes && (
@@ -296,7 +317,12 @@ export default function MeetingDetailsPage() {
               onSeek={recReady ? seekTo : undefined}
               onEdit={async (seq, patch) => { try { const r = await meetingsApi.editSegment(id, seq, patch); setSegments((cur) => cur.map((s) => (s.seq === seq ? { ...s, ...r.data } : s))); } catch (err) { addToast(formatApiError(err), 'error'); throw err; } }}
               onImport={manage && ['live', 'completed'].includes(m.status) ? async (text) => { try { const r = await meetingsApi.importTranscript(id, text); addToast(`${r.data.imported} lines imported`); await load(); loadTranscript({ reset: true, search: '' }); } catch (err) { addToast(formatApiError(err), 'error'); } } : undefined}
-              emptyHint={m.status === 'completed' ? 'No speech was transcribed for this meeting. If you have a transcript from elsewhere you can paste it in.' : 'The transcript appears after the meeting starts.'}
+              emptyHint={
+                isActive(m.processing?.transcript) ? 'Generating the transcript… this page updates by itself when it is ready.'
+                : m.processing?.transcript === 'failed' ? `The transcript could not be generated.${manage && m.processing?.lastError ? ` ${m.processing.lastError}` : ''} Use "Try again" above, or paste a transcript from elsewhere.`
+                : m.status === 'completed' && m.recording?.status === 'ready' && m.processing?.transcript !== 'done' ? 'The recording is saved but its transcript has not been generated yet. Use "Start" above.'
+                : m.status === 'completed' ? 'No speech was transcribed for this meeting. If you have a transcript from elsewhere you can paste it in.' : 'The transcript appears after the meeting starts.'
+              }
             />
           </div>
         )}
@@ -327,7 +353,7 @@ export default function MeetingDetailsPage() {
                 <p className="text-xs text-slate-400">Generated by AI from the transcript{m.summary.generatedAt ? ` on ${new Date(m.summary.generatedAt).toLocaleString()}` : ''}. Review before relying on it.</p>
                 <div className="flex gap-2"><Button variant="secondary" size="sm" icon={Download} onClick={() => exportNow('summary', 'pdf')}>PDF</Button><Button variant="secondary" size="sm" icon={Download} onClick={() => exportNow('summary', 'docx')}>DOCX</Button></div>
               </div>
-            ) : <EmptyState icon={Sparkles} title="No summary yet" description={ai ? 'A summary is generated automatically once there is a transcript.' : 'AI summaries turn on once an AI provider is configured on the server.'} />}
+            ) : <EmptyState icon={Sparkles} title={isActive(m.processing?.summary) ? 'Generating AI summary…' : m.processing?.summary === 'failed' ? 'The summary could not be generated' : 'No summary yet'} description={isActive(m.processing?.summary) ? 'This page updates by itself when the summary is ready.' : m.processing?.summary === 'failed' ? `Your meeting and transcript are safe.${manage && m.processing?.lastError ? ` ${m.processing.lastError}` : ''} Use "Regenerate" above to try again.` : ai ? (m.processing?.transcript === 'done' || (m.stats?.segmentCount || 0) > 0) ? 'No summary has been generated yet. Use "Generate summary" above.' : 'A summary is generated automatically once there is a transcript.' : 'AI summaries turn on once an AI provider is configured on the server.'} />}
           </div>
         )}
 
@@ -369,7 +395,7 @@ export default function MeetingDetailsPage() {
         )}
 
         {activeTab === 'participants' && (
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
             <Card className="p-5"><h2 className="text-sm font-bold mb-3 text-slate-900 dark:text-white">Invited</h2>
               <ul className="space-y-2 text-sm">{(m.participants || []).map((p) => <li key={p._id || p.name} className="flex items-center justify-between gap-2"><span className="dark:text-slate-200">{p.name}{p.email ? <span className="text-xs text-slate-400"> · {p.email}</span> : null}</span><span className="text-xs text-slate-500">{p.role === 'chair' ? 'Chair' : p.userId ? 'Member' : 'Guest'}</span></li>)}</ul>
               <p className="mt-3 text-xs text-slate-400">Attendance isn’t verified from audio.</p>

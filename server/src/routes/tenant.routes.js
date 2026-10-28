@@ -4,6 +4,7 @@ import * as tenantController from '../controllers/tenant.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireTenant } from '../middleware/requireTenant.js';
 import { requirePermission } from '../middleware/requirePermission.js';
+import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import { TENANT_ROLES } from '../config/permissions.js';
 
@@ -76,6 +77,7 @@ router.post(
   authenticate,
   requireTenant,
   requirePermission('users.invite'),
+  requireVerifiedEmail,
   validateRequest(inviteSchema),
   tenantController.inviteMember
 );

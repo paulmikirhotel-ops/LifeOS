@@ -6,6 +6,8 @@ import { requireTenant } from '../middleware/requireTenant.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
+import { cacheResponse } from '../utils/cache.js';
+
 const router = Router();
 
 const habitSchema = z.object({
@@ -14,6 +16,7 @@ const habitSchema = z.object({
   category: z.string().optional(),
   targetPerDay: z.coerce.number().int().min(1).max(24).optional(),
   color: z.string().optional(),
+  goalId: z.string().nullable().optional(),
 });
 
 const patchSchema = habitSchema.partial().extend({
@@ -28,8 +31,8 @@ const logSchema = z.object({
   count: z.coerce.number().int().min(1).max(24).optional(),
 });
 
-router.get('/', authenticate, requireTenant, requirePermission('habits.view'), habitController.listHabits);
-router.get('/stats', authenticate, requireTenant, requirePermission('habits.view'), habitController.getStats);
+router.get('/', authenticate, requireTenant, requirePermission('habits.view'), cacheResponse(30), habitController.listHabits);
+router.get('/stats', authenticate, requireTenant, requirePermission('habits.view'), cacheResponse(30), habitController.getStats);
 router.post('/', authenticate, requireTenant, requirePermission('habits.create'), validateRequest(habitSchema), habitController.createHabit);
 router.patch('/:id', authenticate, requireTenant, requirePermission('habits.edit'), validateRequest(patchSchema), habitController.updateHabit);
 router.delete('/:id', authenticate, requireTenant, requirePermission('habits.delete'), habitController.removeHabit);

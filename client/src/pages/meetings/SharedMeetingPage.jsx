@@ -5,6 +5,7 @@ import { Spinner, Card, Badge } from '../../components/ui.jsx';
 import MiniMarkdown from '../../components/meetings/MiniMarkdown.jsx';
 import { meetingsApi } from '../../api/meetings.js';
 import { ACTION_STATUS_LABELS, PRIORITY_LABELS, clock, speakerName } from '../../utils/meetingFormat.js';
+import Watermark from '../../components/Watermark.jsx';
 
 /** Public, read-only page behind an explicit share link. No login, no recording. */
 export default function SharedMeetingPage() {
@@ -26,7 +27,8 @@ export default function SharedMeetingPage() {
   if (!data) return <div className="min-h-screen flex items-center justify-center"><Spinner size="lg" /></div>;
 
   return (
-    <main className="mx-auto max-w-3xl space-y-5 p-4 sm:p-8 text-slate-900 dark:text-white">
+    <main className="relative isolate mx-auto max-w-3xl space-y-5 p-4 sm:p-8 text-slate-900 dark:text-white">
+      <Watermark />
       <p className="text-sm font-bold text-indigo-600">LifeOS</p>
       <header>
         <h1 className="text-2xl sm:text-3xl font-black break-words">{data.title}</h1>

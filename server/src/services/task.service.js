@@ -108,9 +108,13 @@ export async function update(user, id, patch) {
   delete updateData.tenantId;
   delete updateData.createdBy;
 
+  // Re-opening a task must clear its completion time, otherwise it keeps counting as "done" in analytics.
+  const change = { $set: updateData };
+  if (updateData.status && updateData.status !== 'completed') change.$unset = { completedAt: 1 };
+
   const task = await Task.findOneAndUpdate(
     { _id: id, tenantId: user.tenantId },
-    { $set: updateData },
+    change,
     { new: true }
   ).lean();
 

@@ -39,3 +39,23 @@ export function getModuleMeta(module) {
 export function moduleRoute(module) {
   return getModuleMeta(module).route;
 }
+
+/**
+ * Where a notification should take the user. Notifications may carry their own deep link in
+ * data.path (meetings do: the workspace meeting for members, the invitation page for people who
+ * joined through a link). Only in-app paths are accepted.
+ */
+export function notificationPath(n) {
+  const p = n?.data?.path;
+  if (typeof p === 'string' && p.startsWith('/') && !p.startsWith('//')) return p;
+  if ((n?.module || n?.type) === 'meeting' && n?.relatedId) return `/meetings/${n.relatedId}`;
+  return moduleRoute(n?.module || n?.type);
+}
+
+/** Optional primary action button, e.g. "Join Meeting" on meeting-start notifications. */
+export function notificationAction(n) {
+  if (n?.data?.action !== 'join') return null;
+  const p = n.data.joinPath;
+  if (typeof p !== 'string' || !p.startsWith('/') || p.startsWith('//')) return null;
+  return { label: n.data.actionLabel || 'Join Meeting', path: p };
+}

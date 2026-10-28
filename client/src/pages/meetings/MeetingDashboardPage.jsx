@@ -24,11 +24,11 @@ export default function MeetingDashboardPage() {
   const rec = recent.data?.items || [];
 
   return (
-    <div className="grid gap-8 lg:grid-cols-2">
-      <section aria-labelledby="up-h">
+    <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <section aria-labelledby="up-h" className="min-w-0">
         <div className="mb-3 flex items-center justify-between">
           <h2 id="up-h" className="text-lg font-bold text-slate-900 dark:text-white">Upcoming meetings</h2>
-          <Link to="/meetings/calendar" className="text-sm font-semibold text-indigo-600 hover:underline">Calendar</Link>
+          <Link to="/meetings/calendar" className="inline-flex items-center min-h-10 text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">Calendar</Link>
         </div>
         {upcoming.loading && !upcoming.data ? (
           <CardSkeleton />
@@ -46,10 +46,10 @@ export default function MeetingDashboardPage() {
         )}
       </section>
 
-      <section aria-labelledby="rec-h">
+      <section aria-labelledby="rec-h" className="min-w-0">
         <div className="mb-3 flex items-center justify-between">
           <h2 id="rec-h" className="text-lg font-bold text-slate-900 dark:text-white">Recent meetings</h2>
-          <Link to="/meetings/history" className="text-sm font-semibold text-indigo-600 hover:underline">All history</Link>
+          <Link to="/meetings/history" className="inline-flex items-center min-h-10 text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">All history</Link>
         </div>
         {recent.loading && !recent.data ? (
           <CardSkeleton />

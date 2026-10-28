@@ -1,3 +1,4 @@
+import * as safety from '../services/connectSafety.service.js';
 import { AdminService } from '../services/admin.service.js';
 
 /** Platform admin endpoints — platform entities and AGGREGATES ONLY (no tenant data). */
@@ -24,4 +25,12 @@ export async function listTenants(req, res) {
 export async function setTenantStatus(req, res) {
   const data = await AdminService.setTenantStatus(req.params.tenantId, req.body.status);
   res.json({ success: true, data });
+}
+
+export async function listConnectReports(req, res) {
+  res.json({ success: true, data: await safety.listReports({ status: req.query.status }) });
+}
+
+export async function setConnectReportStatus(req, res) {
+  res.json({ success: true, data: await safety.setReportStatus(req.params.id, req.body.status) });
 }

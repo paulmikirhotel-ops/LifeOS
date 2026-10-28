@@ -37,6 +37,7 @@ const createSchema = z.object({
 const updateSchema = createSchema.partial();
 
 router.get('/', authenticate, requireTenant, requirePermission('schedule.view'), validateRequest(listQuery, 'query'), calendarController.listEvents);
+router.get('/tasks', authenticate, requireTenant, requirePermission('tasks.view'), validateRequest(listQuery, 'query'), calendarController.listTasksDue);
 router.post('/', authenticate, requireTenant, requirePermission('schedule.create'), validateRequest(createSchema), calendarController.createEvent);
 router.patch('/:id', authenticate, requireTenant, requirePermission('schedule.edit'), validateRequest(updateSchema), calendarController.updateEvent);
 router.delete('/:id', authenticate, requireTenant, requirePermission('schedule.delete'), calendarController.deleteEvent);

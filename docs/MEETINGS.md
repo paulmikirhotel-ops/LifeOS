@@ -117,3 +117,27 @@ API_URL=https://<api>.onrender.com SMOKE_EMAIL=… SMOKE_PASSWORD=… node scrip
 - [ ] Second user (not invited) cannot open the meeting URL, recording URL or export (404).
 - [ ] Share link works while logged out, hides the recording, and stops working after **Revoke**.
 - [ ] Export TXT/PDF/DOCX/CSV open correctly; "Add to Tasks" creates a task and status stays in sync.
+
+## Video room (Phase 4)
+
+A built-in video room powered by [LiveKit](https://livekit.io) (cloud or self-hosted). It is switched on by setting
+`LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` on the server. Without them everything else keeps working and
+meetings fall back to the organizer's external meeting URL (the `location` field) or the audio-recording room.
+
+**Two doors, one room**
+- Workspace members: `POST /api/meetings/:id/room` (session auth, same access rules as the meeting itself).
+- Invitation-link joiners: `POST /api/public/meet/:token/room` (meeting pass in `X-Meeting-Pass`).
+- Both return a short-lived (4 h) LiveKit token minted on the server. The API secret never reaches the browser.
+  The host flag is signed into the token, so a participant cannot pretend to be the organizer.
+- Heartbeat `POST …/room/ping` (every 60 s) and `POST …/room/leave` keep attendance (`joinedAt`, `leftAt`, status) accurate.
+  When the meeting ends, everyone still "joined" is closed out; link registrants who never entered are marked "absent".
+
+**Recording → transcript → summary (unchanged pipeline)**
+The host's browser mixes every voice in the room into one audio stream (`client/src/utils/audioMixer.js`) and hands it to the
+existing recorder, so chunk upload, Deepgram transcription and AI summary/minutes/action items work exactly as before.
+Everyone sees a recording indicator, and the host must tick a consent box before recording can start.
+Limits: the recording lives in the host's browser (if the host's device dies, the audio uploaded so far is kept);
+one continuous recording session per meeting.
+
+**Files:** server `utils/livekit.js`, `utils/livekitToken.js`, `services/meetingRoom.service.js`;
+client `hooks/useMeetingRoom.js`, `utils/audioMixer.js`, `components/meetings/room/*`, `pages/meetings/MeetingRoomPage.jsx`, `GuestRoomPage.jsx`.

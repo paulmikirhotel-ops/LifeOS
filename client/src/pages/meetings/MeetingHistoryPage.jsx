@@ -33,8 +33,9 @@ export default function MeetingHistoryPage() {
     try {
       const res = await meetingsApi.list({ scope: filters.status ? undefined : 'past', ...filters, page: pg, limit: PAGE });
       if (id !== reqId.current) return; // a newer search superseded this one
-      setItems((cur) => (append ? [...cur, ...res.data.items] : res.data.items));
-      setTotal(res.data.total);
+      const got = res.data?.items || [];
+      setItems((cur) => (append ? [...cur, ...got] : got));
+      setTotal(res.data?.total || 0);
       setPage(pg);
     } catch (err) {
       if (id === reqId.current) setError(formatApiError(err));
@@ -53,7 +54,7 @@ export default function MeetingHistoryPage() {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <label className="relative sm:col-span-2">
           <span className="sr-only">Search meetings</span>
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden="true" />
@@ -77,7 +78,7 @@ export default function MeetingHistoryPage() {
       ) : (
         <>
           <p className="text-xs text-slate-500" aria-live="polite">{total} meeting{total === 1 ? '' : 's'}</p>
-          <div className="grid gap-3 md:grid-cols-2">{items.map((m) => <RecentMeetingCard key={m.id} meeting={m} />)}</div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">{items.map((m) => <RecentMeetingCard key={m.id} meeting={m} />)}</div>
           {items.length < total && (
             <div className="flex justify-center"><Button variant="secondary" loading={loading} onClick={() => load(page + 1, f, true)}>Load more</Button></div>
           )}

@@ -80,7 +80,7 @@ export default function MeetingCalendarPage() {
         from: format(subDays(range.start, 1), 'yyyy-MM-dd'),
         to: format(addDays(range.end, 1), 'yyyy-MM-dd'),
       });
-      setItems(res.data.items);
+      setItems(res.data?.items || []);
     } catch (err) {
       addToast(formatApiError(err), 'error');
     } finally {

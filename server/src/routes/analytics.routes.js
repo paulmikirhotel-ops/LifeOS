@@ -6,6 +6,8 @@ import { requireTenant } from '../middleware/requireTenant.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
+import { cacheResponse } from '../utils/cache.js';
+
 const router = Router();
 
 const querySchema = z.object({
@@ -19,10 +21,11 @@ router.get(
   requireTenant,
   requirePermission('analytics.view'),
   validateRequest(querySchema, 'query'),
+  cacheResponse(60),
   analyticsController.overview
 );
 
 // Home dashboard — any active member; sections are permission-aware.
-router.get('/dashboard', authenticate, requireTenant, analyticsController.dashboard);
+router.get('/dashboard', authenticate, requireTenant, cacheResponse(30), analyticsController.dashboard);
 
 export default router;

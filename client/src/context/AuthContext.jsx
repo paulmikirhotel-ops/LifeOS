@@ -31,7 +31,10 @@ export function AuthProvider({ children }) {
     const handleUnauthorized = () => {
       setUser(null);
       setMemberships([]);
-      if (!window.location.pathname.includes('/login')) {
+      // Public pages (meeting invitation links, shared read-only meetings, auth screens) are meant for
+      // visitors who are not signed in — never bounce them to /login.
+      const isPublicPath = /^\/(login|register|forgot-password|reset-password|verify-email|accept-invite|meet\/|shared\/)/.test(window.location.pathname);
+      if (!isPublicPath) {
         window.location.href = '/login';
       }
     };

@@ -1,0 +1,18 @@
+/* Login / sign-up hero. Motion is decorative only and is switched off for people who prefer reduced motion. */
+@keyframes auth-rise { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes auth-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes auth-glow { 0%, 100% { opacity: .55; transform: scale(1); } 50% { opacity: .85; transform: scale(1.08); } }
+
+.auth-rise { animation: auth-rise .7s cubic-bezier(.16, 1, .3, 1) backwards; }
+.auth-rise-2 { animation-delay: .12s; }
+.auth-rise-3 { animation-delay: .24s; }
+.auth-rise-4 { animation-delay: .36s; }
+.auth-float { animation: auth-float 7s ease-in-out infinite; }
+.auth-glow { animation: auth-glow 9s ease-in-out infinite; }
+.auth-img { opacity: 0; transition: opacity .5s ease; }
+.auth-img[data-ready='true'] { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-rise, .auth-float, .auth-glow { animation: none; }
+  .auth-img { transition: none; }
+}

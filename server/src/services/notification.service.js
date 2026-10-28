@@ -2,6 +2,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { Notification, User } from '../models/index.js';
 import { assertObjectId } from '../utils/objectId.js';
 import * as realtime from './realtime.js';
+import { pushToUser } from './push.service.js';
 
 /**
  * Centralized notification service.
@@ -151,6 +152,7 @@ export async function createNotification({
 
     const clientShape = toClient(notification.toObject ? notification.toObject() : notification);
     realtime.emit(String(userId), String(tenantId), { event: 'notification:created', notification: clientShape });
+    pushToUser(userId, { title: clientShape.title, body: message || '', url: '/notifications', tag: String(type), urgent: priority === 'high' });
     return clientShape;
   } catch (err) {
     console.error('[notify] createNotification failed:', err.message);

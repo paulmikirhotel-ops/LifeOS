@@ -10,11 +10,12 @@ import { useNotification } from '../context/NotificationContext.jsx';
 import api from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useApi } from '../hooks/useApi.js';
-import { 
-  Button, Card, Input, Select, 
-  Badge, Spinner, Modal 
+import {
+  Button, Card, Input, Select,
+  Badge, Spinner, Modal, IconButton, ConfirmDialog, Skeleton
 } from '../components/ui.jsx';
 import { useForm } from 'react-hook-form';
+import PushToggle from '../components/push/PushToggle.jsx';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile');
@@ -32,31 +33,36 @@ export default function SettingsPage() {
   ].filter(t => t.show);
 
   return (
-    <div className="max-w-5xl mx-auto flex flex-col md:flex-row gap-8 animate-in fade-in duration-500 pb-20">
-      {/* Sidebar Tabs */}
-      <aside className="w-full md:w-64 space-y-2">
-        <h1 className="text-2xl font-bold dark:text-white mb-6">Settings</h1>
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-          >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
-          </button>
-        ))}
+    <div className="max-w-5xl mx-auto flex flex-col lg:flex-row gap-6 lg:gap-8 pb-20">
+      <aside className="w-full lg:w-64 flex-shrink-0">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white mb-4 lg:mb-6">Settings</h1>
+        {/* Phones: one scrolling row of tabs. Larger screens: a vertical list. */}
+        <div role="tablist" aria-label="Settings sections" aria-orientation="vertical" className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible -mx-4 px-4 lg:mx-0 lg:px-0 pb-1 lg:pb-0 [scrollbar-width:none]">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-shrink-0 lg:w-full flex items-center gap-2.5 px-4 min-h-11 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+            >
+              <tab.icon className="w-4 h-4" aria-hidden="true" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </aside>
 
-      {/* Content Area */}
-      <main className="flex-1 min-w-0 space-y-8">
-        {activeTab === 'profile' && <ProfileSettings user={user} refreshMe={refreshMe} />}
-        {activeTab === 'workspace' && <WorkspaceSettings activeTenant={activeTenant} refreshMe={refreshMe} />}
-        {activeTab === 'members' && <MemberSettings />}
-        {activeTab === 'security' && <SecuritySettings />}
-        {activeTab === 'notifications' && <NotificationSettings />}
-        {activeTab === 'danger' && <DangerZone logout={logout} />}
-      </main>
+      <div className="flex-1 min-w-0 space-y-8" role="tabpanel" key={activeTab}>
+        <div className="page-enter space-y-8">
+          {activeTab === 'profile' && <ProfileSettings user={user} refreshMe={refreshMe} />}
+          {activeTab === 'workspace' && <WorkspaceSettings activeTenant={activeTenant} refreshMe={refreshMe} />}
+          {activeTab === 'members' && <MemberSettings />}
+          {activeTab === 'security' && <SecuritySettings />}
+          {activeTab === 'notifications' && (<><NotificationSettings /><PushToggle /></>)}
+          {activeTab === 'danger' && <DangerZone logout={logout} />}
+        </div>
+      </div>
     </div>
   );
 }
@@ -84,17 +90,16 @@ function ProfileSettings({ user, refreshMe }) {
   };
 
   return (
-    <Card className="p-8 space-y-8">
+    <Card className="p-5 sm:p-8 space-y-6 sm:space-y-8">
       <div>
-        <h3 className="text-xl font-bold dark:text-white">Profile Information</h3>
+        <h2 className="text-xl font-bold dark:text-white">Profile Information</h2>
         <p className="text-sm text-slate-500">Update your personal details and how others see you.</p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <div className="flex flex-col md:flex-row gap-8 items-start">
-          <div className="w-24 h-24 rounded-3xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-300 relative group">
-            <User className="w-12 h-12" />
-            <button type="button" className="absolute inset-0 bg-black/50 text-white text-[10px] font-bold uppercase opacity-0 group-hover:opacity-100 transition-opacity rounded-3xl flex items-center justify-center">Change</button>
+        <div className="flex flex-col sm:flex-row gap-6 sm:gap-8 items-start">
+          <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 flex items-center justify-center text-white text-3xl font-bold flex-shrink-0 relative group" aria-hidden="true">
+            {(user?.name || '?').split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()}
           </div>
           <div className="flex-1 space-y-4 w-full">
             <Input label="Full Name" {...register('name', { required: true })} />
@@ -166,15 +171,15 @@ function WorkspaceSettings({ activeTenant, refreshMe }) {
   };
 
   return (
-    <Card className="p-8 space-y-8">
+    <Card className="p-5 sm:p-8 space-y-6 sm:space-y-8">
       <div>
-        <h3 className="text-xl font-bold dark:text-white">Workspace Configuration</h3>
+        <h2 className="text-xl font-bold dark:text-white">Workspace Configuration</h2>
         <p className="text-sm text-slate-500">Manage your workspace settings and defaults.</p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <Input label="Workspace Name" {...register('name', { required: true })} />
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Select
             label="Default Currency"
             options={[
@@ -188,7 +193,7 @@ function WorkspaceSettings({ activeTenant, refreshMe }) {
         </div>
         <div className="space-y-4">
           <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Working Hours</label>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input type="time" label="Start" {...register('workingHoursStart')} />
             <Input type="time" label="End" {...register('workingHoursEnd')} />
           </div>
@@ -212,32 +217,39 @@ function MemberSettings() {
   const { addToast } = useToast();
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const { data: members, reload } = useApi('/tenants/members');
+  const [toRemove, setToRemove] = useState(null);
+  const [removing, setRemoving] = useState(false);
 
-  const removeMember = async (member) => {
-    if (!confirm(`Remove ${member.name || 'this member'} from the workspace?`)) return;
+  const removeMember = async () => {
+    const member = toRemove;
+    if (!member) return;
+    setRemoving(true);
     try {
       const res = await api.delete(`/tenants/members/${member.userId}`);
       if (res.success) {
         addToast('Member removed');
+        setToRemove(null);
         reload();
       }
     } catch (e) {
       addToast(e.message, 'error');
+    } finally {
+      setRemoving(false);
     }
   };
 
   return (
-    <Card className="p-8 space-y-8">
-      <div className="flex items-center justify-between">
+    <Card className="p-5 sm:p-8 space-y-6 sm:space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h3 className="text-xl font-bold dark:text-white">Team Members</h3>
+          <h2 className="text-xl font-bold dark:text-white">Team Members</h2>
           <p className="text-sm text-slate-500">Invite and manage people in this workspace.</p>
         </div>
         <Button size="sm" icon={UserPlus} onClick={() => setIsInviteModalOpen(true)}>Invite Member</Button>
       </div>
 
       <div className="divide-y divide-slate-100 dark:divide-slate-800">
-        {members?.items?.map(member => (
+        {(Array.isArray(members?.items) ? members.items : []).map(member => (
           <div key={member.userId || member.id} className="py-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-slate-400 flex-shrink-0">
@@ -251,18 +263,23 @@ function MemberSettings() {
             <div className="flex items-center gap-3 flex-shrink-0">
               <Badge variant={member.role === 'owner' ? 'success' : 'info'} className="text-[10px] uppercase font-black">{ROLE_LABELS[member.role] || member.role}</Badge>
               {member.role !== 'owner' && (
-                <button
-                  className="p-2 text-slate-400 hover:text-red-500 rounded-lg transition-colors"
-                  onClick={() => removeMember(member)}
-                  title="Remove member"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <IconButton icon={Trash2} tone="danger" label={`Remove ${member.name || 'member'}`} onClick={() => setToRemove(member)} />
               )}
             </div>
           </div>
         ))}
       </div>
+
+      <ConfirmDialog
+        open={!!toRemove}
+        title="Remove this member?"
+        description={toRemove ? `${toRemove.name || 'This member'} will lose access to the workspace.` : ''}
+        confirmLabel="Remove member"
+        danger
+        busy={removing}
+        onConfirm={removeMember}
+        onClose={() => !removing && setToRemove(null)}
+      />
 
       <Modal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} title="Invite Team Member">
         <InviteForm onSuccess={() => { setIsInviteModalOpen(false); reload(); }} />
@@ -333,9 +350,9 @@ function SecuritySettings() {
   };
 
   return (
-    <Card className="p-8 space-y-8">
+    <Card className="p-5 sm:p-8 space-y-6 sm:space-y-8">
       <div>
-        <h3 className="text-xl font-bold dark:text-white">Security</h3>
+        <h2 className="text-xl font-bold dark:text-white">Security</h2>
         <p className="text-sm text-slate-500">Ensure your account is protected with a strong password.</p>
       </div>
 
@@ -354,9 +371,10 @@ function SecuritySettings() {
 function DangerZone({ logout }) {
   const { addToast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const handleDeleteAccount = async () => {
-    if (!confirm('Are you absolutely sure? This action is IRREVERSIBLE. All your data will be permanently deleted.')) return;
+    setConfirmOpen(false);
     setLoading(true);
     try {
       const res = await api.delete('/auth/account');
@@ -371,9 +389,9 @@ function DangerZone({ logout }) {
   };
 
   return (
-    <Card className="p-8 space-y-8 border-red-200 dark:border-red-900/30">
+    <Card className="p-5 sm:p-8 space-y-6 sm:space-y-8 border-red-200 dark:border-red-900/30">
       <div>
-        <h3 className="text-xl font-bold text-red-600">Danger Zone</h3>
+        <h2 className="text-xl font-bold text-red-600">Danger Zone</h2>
         <p className="text-sm text-slate-500">Irreversible actions that affect your entire account.</p>
       </div>
 
@@ -384,9 +402,19 @@ function DangerZone({ logout }) {
           <p className="text-xs text-red-700 dark:text-red-500 mt-1 leading-relaxed">
             Deleting your account will remove all your workspaces, tasks, financial records, and personal data. This cannot be undone.
           </p>
-          <Button variant="danger" size="sm" className="mt-4" onClick={handleDeleteAccount} loading={loading}>Delete Everything</Button>
+          <Button variant="danger" size="sm" className="mt-4" onClick={() => setConfirmOpen(true)} loading={loading}>Delete Everything</Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Delete your account?"
+        description="This is irreversible. All your workspaces, tasks, finances and personal data will be permanently deleted."
+        confirmLabel="Yes, delete everything"
+        danger
+        onConfirm={handleDeleteAccount}
+        onClose={() => setConfirmOpen(false)}
+      />
     </Card>
   );
 }
@@ -483,9 +511,9 @@ function NotificationSettings() {
   };
 
   return (
-    <Card className="p-6 sm:p-8 space-y-8">
+    <Card className="p-5 sm:p-8 space-y-6 sm:space-y-8">
       <div>
-        <h3 className="text-xl font-bold dark:text-white">Notifications</h3>
+        <h2 className="text-xl font-bold dark:text-white">Notifications</h2>
         <p className="text-sm text-slate-500 mt-1">Choose what reaches you, how it sounds, and where it pops up.</p>
       </div>
 

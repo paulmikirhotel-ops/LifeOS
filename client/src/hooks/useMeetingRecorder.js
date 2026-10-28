@@ -12,8 +12,8 @@ import { saveChunk, deleteChunk, listChunks } from '../utils/chunkStore.js';
  *    chunk index), so flaky mobile networks and API restarts don't lose or duplicate audio.
  *  - Unsent chunks survive a crash/reload and can be re-sent with recoverPending().
  *
- * Limitation: one continuous recording session per meeting. A page reload mid-meeting cannot
- * continue the same recording (a new session would produce a second audio file header).
+ * One continuous recording = one browser session. A reload or a new recorder simply starts a NEW segment (the server
+ * hands out the next block of chunk numbers) and the server joins the segments into one audio file afterwards.
  */
 
 const TIMESLICE_MS = 10_000;
@@ -54,7 +54,13 @@ export function micErrorMessage(err) {
   return 'Could not start recording. Please check your microphone and connection.';
 }
 
-export function useMeetingRecorder({ meetingId, startIndex = 0 }) {
+/**
+ * meetingId  where unsent audio is kept on this device (any stable string; link joiners use a token-based one)
+ * putChunk   async (index, blob, mime) => uploads one chunk. Defaults to the workspace-member endpoint; link joiners
+ *            pass a function that uses their meeting pass.
+ * start({ stream, startIndex }) takes the first chunk number from the server's claim (each recorder has its own block).
+ */
+export function useMeetingRecorder({ meetingId, startIndex = 0, putChunk }) {
   const [state, setState] = useState('idle'); // idle | requesting | recording | paused | stopping | stopped | error
   const [elapsedMs, setElapsedMs] = useState(0);
   const [muted, setMuted] = useState(false);
@@ -76,6 +82,8 @@ export function useMeetingRecorder({ meetingId, startIndex = 0 }) {
   const runStartRef = useRef(null);
   const wakeRef = useRef(null);
   const stopResolveRef = useRef(null);
+  const putRef = useRef(putChunk);
+  putRef.current = putChunk;
 
   const setS = (s) => {
     stateRef.current = s;
@@ -96,7 +104,8 @@ export function useMeetingRecorder({ meetingId, startIndex = 0 }) {
       while (queueRef.current.length && !fatalRef.current) {
         const item = queueRef.current[0];
         try {
-          await meetingsApi.putChunk(meetingId, item.index, item.blob, item.mime);
+          if (putRef.current) await putRef.current(item.index, item.blob, item.mime);
+          else await meetingsApi.putChunk(meetingId, item.index, item.blob, item.mime);
           queueRef.current.shift();
           deleteChunk(meetingId, item.index);
           setUploaded((n) => n + 1);
@@ -208,24 +217,31 @@ export function useMeetingRecorder({ meetingId, startIndex = 0 }) {
   useEffect(() => () => teardown(), [teardown]);
 
   // ── controls ─────────────────────────────────────────────────────────
-  const start = useCallback(async () => {
+  // start() records your own microphone. start({ stream }) records a stream you provide instead — the video
+  // room passes the mixed audio of everyone in the meeting. Everything after this point is identical.
+  const start = useCallback(async (opts) => {
     setError(null);
+    if (Number.isInteger(opts?.startIndex)) indexRef.current = opts.startIndex;
+    fatalRef.current = false;
+    const external = opts && typeof MediaStream !== 'undefined' && opts.stream instanceof MediaStream ? opts.stream : null;
     const mime = pickMimeType();
-    if (mime === null || !navigator.mediaDevices?.getUserMedia) {
+    if (mime === null || (!external && !navigator.mediaDevices?.getUserMedia)) {
       setError(MESSAGES.unsupported);
       setS('error');
       return false;
     }
     setS('requesting');
-    let media;
-    try {
-      media = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-      });
-    } catch (err) {
-      setError(micErrorMessage(err));
-      setS('error');
-      return false;
+    let media = external;
+    if (!media) {
+      try {
+        media = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+        });
+      } catch (err) {
+        setError(micErrorMessage(err));
+        setS('error');
+        return false;
+      }
     }
     streamRef.current = media;
     setStream(media);

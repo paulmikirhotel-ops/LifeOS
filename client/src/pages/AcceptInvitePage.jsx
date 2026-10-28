@@ -89,8 +89,8 @@ export default function AcceptInvitePage() {
         <div className="space-y-4">
           <p className="text-sm text-slate-600 dark:text-slate-400">Please register or log in to accept this invitation.</p>
           <div className="grid grid-cols-2 gap-4">
-            <Link to={`/register?inviteToken=${token}`} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-indigo-700 transition-colors">Register</Link>
-            <Link to={`/login?inviteToken=${token}`} className="bg-slate-100 dark:bg-slate-800 dark:text-white px-4 py-2 rounded-lg font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Login</Link>
+            <Link to={`/register?inviteToken=${token}`} className="bg-indigo-600 text-white px-4 py-2.5 min-h-11 inline-flex items-center rounded-lg font-bold hover:bg-indigo-700 transition-colors">Register</Link>
+            <Link to={`/login?inviteToken=${token}`} className="bg-slate-100 dark:bg-slate-800 dark:text-white px-4 py-2.5 min-h-11 inline-flex items-center rounded-lg font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Login</Link>
           </div>
         </div>
       )}

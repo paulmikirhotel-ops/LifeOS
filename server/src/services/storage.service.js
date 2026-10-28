@@ -50,6 +50,11 @@ async function s3Client() {
       region: c.region,
       endpoint: c.endpoint,
       credentials: { accessKeyId: c.accessKeyId, secretAccessKey: c.secretAccessKey },
+      // Newer AWS SDK versions add checksum headers/params by default. Backblaze B2 (and R2) don't always accept
+      // them, which breaks uploads or presigned URLs after an SDK upgrade. Only send checksums when required.
+      // (Older SDK versions simply ignore these two options.)
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     }),
   };
   return s3;
@@ -97,6 +102,37 @@ export async function getObject(key, range) {
     if (err?.name === 'NoSuchKey') throw ApiError.notFound('Recording file not found');
     throw err;
   }
+}
+
+/** Saves an object to a local file (used when several recording segments are joined). */
+export async function downloadToFile(key, file) {
+  const { stream } = await getObject(key);
+  await fsp.mkdir(path.dirname(file), { recursive: true });
+  await new Promise((resolve, reject) => {
+    const out = fs.createWriteStream(file);
+    Readable.from(stream).on('error', reject).pipe(out).on('error', reject).on('finish', resolve);
+  });
+}
+
+/** Uploads a local file as an object, streaming (never holds it in memory). Returns the size in bytes. */
+export async function putFile(file, key, contentType = 'application/octet-stream') {
+  if (!storageConfigured()) throw notConfigured();
+  const size = (await fsp.stat(file)).size;
+  if (env.storage.driver === 'local') {
+    const dest = localPath(key);
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    await fsp.copyFile(file, dest);
+    return size;
+  }
+  const { client, bucket } = await s3Client();
+  const { Upload } = await import('@aws-sdk/lib-storage');
+  await new Upload({
+    client,
+    params: { Bucket: bucket, Key: key, Body: fs.createReadStream(file), ContentType: contentType },
+    queueSize: 2,
+    partSize: 5 * 1024 * 1024,
+  }).done();
+  return size;
 }
 
 export async function deletePrefix(prefix) {

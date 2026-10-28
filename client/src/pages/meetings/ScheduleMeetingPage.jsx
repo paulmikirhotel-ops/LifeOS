@@ -148,7 +148,8 @@ export default function ScheduleMeetingPage() {
       const res = editing ? await meetingsApi.update(id, body) : await meetingsApi.create(body);
       const n = res.data.occurrences;
       addToast(editing ? 'Meeting updated' : n > 1 ? `${n} meetings scheduled` : 'Meeting scheduled');
-      navigate(`/meetings/${res.data.id}`);
+      // The invite password is only returned once, at creation: pass it to the details page in router state (not storage).
+      navigate(`/meetings/${res.data.id}`, { state: editing ? undefined : { invite: res.data.invite } });
     } catch (err) {
       setFormError(formatApiError(err));
     } finally {
@@ -160,7 +161,7 @@ export default function ScheduleMeetingPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-28 md:pb-8">
-      <Link to={editing ? `/meetings/${id}` : '/meetings'} className="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-indigo-600">
+      <Link to={editing ? `/meetings/${id}` : '/meetings'} className="inline-flex items-center gap-1 min-h-10 text-sm font-semibold text-slate-500 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 rounded-lg">
         <ChevronLeft className="w-4 h-4" aria-hidden="true" /> Back
       </Link>
       <h1 className="text-2xl font-black text-slate-900 dark:text-white">{editing ? 'Edit meeting' : 'Schedule meeting'}</h1>

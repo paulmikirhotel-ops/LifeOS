@@ -79,6 +79,7 @@ export default function RegisterPage() {
         <Input
           label="Password"
           type="password"
+          autoComplete="new-password"
           placeholder="••••••••"
           {...register('password')}
           error={errors.password?.message}
@@ -122,7 +123,7 @@ export default function RegisterPage() {
 
       <p className="text-center text-sm text-slate-500">
         Already have an account?{' '}
-        <Link to="/login" className="text-indigo-600 hover:text-indigo-500 font-semibold transition-colors">
+        <Link to="/login" className="inline-flex items-center min-h-10 text-indigo-600 hover:text-indigo-500 font-semibold transition-colors">
           Sign In
         </Link>
       </p>

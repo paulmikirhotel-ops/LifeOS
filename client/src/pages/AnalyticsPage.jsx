@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import { useApi } from '../hooks/useApi.js';
 import { useTenant } from '../context/TenantContext.jsx';
-import { Card, Spinner, StatCard } from '../components/ui.jsx';
+import { Card, StatCard, PageHeader, ErrorState, SkeletonCard, Skeleton } from '../components/ui.jsx';
 import {
   TrendingUp, CheckCircle2, Zap, Wallet,
   PieChart as PieChartIcon, Activity
@@ -30,9 +30,21 @@ function ChartEmpty({ message = 'No data in the last 30 days yet' }) {
 
 export default function AnalyticsPage() {
   const { can } = useTenant();
-  const { data: analytics, loading } = useApi('/analytics/overview');
+  const { data: analytics, loading, error, reload } = useApi('/analytics/overview');
 
-  if (loading) return <div className="h-full flex items-center justify-center"><Spinner size="lg" /></div>;
+  if (loading && !analytics) {
+    return (
+      <div className="space-y-6 sm:space-y-8" role="status" aria-busy="true">
+        <span className="sr-only">Loading analytics…</span>
+        <div className="space-y-2"><Skeleton className="h-8 w-48" /><Skeleton className="h-4 w-64 max-w-full" /></div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">{[0, 1, 2, 3].map((i) => <StatCard key={i} loading />)}</div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8"><SkeletonCard lines={6} /><SkeletonCard lines={6} /></div>
+      </div>
+    );
+  }
+  if (error && !analytics) {
+    return <Card><ErrorState title="Analytics couldn't load" details={error} onRetry={reload} /></Card>;
+  }
 
   // Server contract (GET /analytics/overview) — every key has a safe default.
   const d = analytics || {};
@@ -46,7 +58,7 @@ export default function AnalyticsPage() {
   const focusTotal = (timeAndFocus.focusPerDay || []).reduce((s, x) => s + (x.focusMinutes || 0), 0);
   const habitRate = Math.round((habits.completionPct ?? 0) * 100);
   const savingsRate = can('finance.view')
-    ? Math.round(((totals.income - totals.expense) / (totals.income || 1)) * 100)
+    ? Math.round((((totals.income || 0) - (totals.expense || 0)) / (totals.income || 1)) * 100)
     : 0;
 
   const focusHours = focusTotal >= 60 ? `${Math.round(focusTotal / 60)}h` : `${Math.round(focusTotal)}m`;
@@ -59,13 +71,8 @@ export default function AnalyticsPage() {
   const expenseCategories = (finance.topExpenseCategories || []).map((row) => ({ name: row.name || 'Uncategorized', value: row.value || 0 }));
 
   return (
-    <div className="space-y-8 pb-10">
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold dark:text-white">Analytics</h1>
-          <p className="text-sm text-slate-500 font-medium">Data-driven insights into your performance</p>
-        </div>
-      </header>
+    <div className="space-y-6 sm:space-y-8 pb-10">
+      <PageHeader title="Analytics" description="Data-driven insights into your performance" />
 
       {/* Overview Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -77,12 +84,12 @@ export default function AnalyticsPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
         {/* Task Completion Trend */}
-        <Card className="p-6 min-w-0">
-          <h3 className="font-bold mb-6 dark:text-white flex items-center gap-2 truncate">
+        <Card className="p-5 sm:p-6 min-w-0">
+          <h2 className="font-bold mb-5 text-slate-900 dark:text-white flex items-center gap-2 truncate">
             <CheckCircle2 className="w-4 h-4 text-indigo-500 flex-shrink-0" /> <span className="truncate">Task Completion History</span>
-          </h3>
+          </h2>
           <div className="h-64 min-w-0">
             {taskHistory.length ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -100,10 +107,10 @@ export default function AnalyticsPage() {
         </Card>
 
         {/* Focus Minutes */}
-        <Card className="p-6 min-w-0">
-          <h3 className="font-bold mb-6 dark:text-white flex items-center gap-2 truncate">
+        <Card className="p-5 sm:p-6 min-w-0">
+          <h2 className="font-bold mb-5 text-slate-900 dark:text-white flex items-center gap-2 truncate">
             <Zap className="w-4 h-4 text-amber-500 flex-shrink-0" /> <span className="truncate">Deep Work Distribution</span>
-          </h3>
+          </h2>
           <div className="h-64 min-w-0">
             {focusHistory.length ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -125,14 +132,14 @@ export default function AnalyticsPage() {
         </Card>
 
         {/* Time by Category */}
-        <Card className="p-6 min-w-0">
-          <h3 className="font-bold mb-6 dark:text-white flex items-center gap-2 truncate">
+        <Card className="p-5 sm:p-6 min-w-0">
+          <h2 className="font-bold mb-5 text-slate-900 dark:text-white flex items-center gap-2 truncate">
             <PieChartIcon className="w-4 h-4 text-fuchsia-500 flex-shrink-0" /> <span className="truncate">Time by Category</span>
-          </h3>
-          <div className="h-64 flex flex-col md:flex-row items-center gap-8 min-w-0">
+          </h2>
+          <div className="min-h-64 flex flex-col md:flex-row items-center gap-4 md:gap-8 min-w-0">
             {timeCategories.length ? (
               <>
-                <div className="flex-1 h-full w-full">
+                <div className="flex-1 h-56 md:h-64 w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie data={timeCategories} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" nameKey="name">
@@ -162,10 +169,10 @@ export default function AnalyticsPage() {
 
         {/* Finance Trend */}
         {can('finance.view') && (
-          <Card className="p-6 min-w-0">
-            <h3 className="font-bold mb-6 dark:text-white flex items-center gap-2 truncate">
+          <Card className="p-5 sm:p-6 min-w-0">
+            <h2 className="font-bold mb-5 text-slate-900 dark:text-white flex items-center gap-2 truncate">
               <TrendingUp className="w-4 h-4 text-emerald-500 flex-shrink-0" /> <span className="truncate">Financial Momentum</span>
-            </h3>
+            </h2>
             <div className="h-64 min-w-0">
               {financeHistory.length ? (
                 <ResponsiveContainer width="100%" height="100%">
@@ -186,20 +193,20 @@ export default function AnalyticsPage() {
 
       {/* Top spending categories (finance members) */}
       {can('finance.view') && expenseCategories.length > 0 && (
-        <Card className="p-6">
-          <h3 className="font-bold mb-4 dark:text-white flex items-center gap-2">
-            <Wallet className="w-4 h-4 text-emerald-500" /> Top Spending Categories
-          </h3>
+        <Card className="p-5 sm:p-6">
+          <h2 className="font-bold mb-4 text-slate-900 dark:text-white flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-emerald-500" aria-hidden="true" /> Top Spending Categories
+          </h2>
           <div className="space-y-3">
             {expenseCategories.map((cat, i) => {
               const max = expenseCategories[0]?.value || 1;
               return (
                 <div key={i} className="flex items-center gap-3">
-                  <span className="text-xs font-medium text-slate-500 w-36 truncate text-left">{cat.name}</span>
+                  <span className="text-xs font-medium text-slate-500 w-24 sm:w-36 flex-shrink-0 truncate text-left">{cat.name}</span>
                   <div className="flex-1 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${Math.max(4, ((cat.value || 0) / max) * 100)}%`, backgroundColor: COLORS[i % COLORS.length] }} />
                   </div>
-                  <span className="text-sm font-bold dark:text-white w-24 text-right">{formatCurrency(cat.value || 0)}</span>
+                  <span className="text-sm font-bold dark:text-white w-20 sm:w-24 flex-shrink-0 text-right tabular-nums">{formatCurrency(cat.value || 0)}</span>
                 </div>
               );
             })}

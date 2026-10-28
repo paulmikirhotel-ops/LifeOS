@@ -41,9 +41,33 @@ function ensureHeartbeat() {
  * Registers an SSE response for a user/tenant.
  * Returns an unsubscribe function.
  */
+let presenceHook = null;
+/** Connect listens here to tell friends when someone comes online or goes offline. */
+export function setPresenceHook(fn) {
+  presenceHook = fn;
+}
+
+function tellPresence(userId, online) {
+  try {
+    presenceHook?.(userId, online);
+  } catch {
+    /* presence is best-effort */
+  }
+}
+
+function drop(key, connId) {
+  const conns = connections.get(key);
+  if (!conns || !conns.delete(connId)) return;
+  if (conns.size === 0) {
+    connections.delete(key);
+    tellPresence(key, false);
+  }
+}
+
 export function register(userId, tenantId, res) {
   const key = String(userId);
   let conns = connections.get(key);
+  const first = !conns;
   if (!conns) {
     conns = new Map();
     connections.set(key, conns);
@@ -51,16 +75,24 @@ export function register(userId, tenantId, res) {
   const connId = `${Date.now()}-${connCounter++}`;
   conns.set(connId, { res, tenantId: String(tenantId) });
   ensureHeartbeat();
+  if (first) tellPresence(key, true);
 
-  res.on('close', () => {
-    conns.delete(connId);
-    if (conns.size === 0) connections.delete(key);
-  });
+  res.on('close', () => drop(key, connId));
 
-  return () => {
-    conns.delete(connId);
-    if (conns.size === 0) connections.delete(key);
-  };
+  return () => drop(key, connId);
+}
+
+/** Is this user connected right now (any tab, any workspace)? */
+export function isOnline(userId) {
+  return connections.has(String(userId));
+}
+
+/** Sends an event to every open connection of a user, whichever workspace it was opened for (Connect is per person). */
+export function emitToUser(userId, event, payload) {
+  const conns = connections.get(String(userId));
+  if (!conns || conns.size === 0) return;
+  const data = `event: ${event}\nid: ${Date.now()}\ndata: ${JSON.stringify(payload)}\n\n`;
+  for (const conn of conns.values()) write(conn.res, data);
 }
 
 /**

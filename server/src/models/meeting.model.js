@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { INVITE_ACCESS_MODES } from '../utils/invite.js';
 
 const { Schema } = mongoose;
 
@@ -15,14 +16,6 @@ export const MEETING_TYPES = [
 export const MEETING_STATUSES = ['scheduled', 'live', 'completed', 'cancelled'];
 export const RECURRENCE_FREQUENCIES = ['none', 'daily', 'weekly', 'monthly', 'custom'];
 export const PIPELINE_STATES = ['idle', 'pending', 'processing', 'done', 'failed'];
-
-/**
- * Who may open the meeting through its invitation link.
- *   public        — anyone with the link.
- *   authenticated — must be signed in to LifeOS.
- *   restricted    — must have been invited directly (by the organizer) or approved.
- */
-export const ACCESS_MODES = ['public', 'authenticated', 'restricted'];
 
 const participantSchema = new Schema(
   {
@@ -73,46 +66,6 @@ const meetingSchema = new Schema(
     // Linked LifeOS calendar entry (kept in sync by MeetingService).
     calendarEventId: { type: Schema.Types.ObjectId, ref: 'CalendarEvent' },
 
-    /**
-     * How people may reach this meeting through its invitation link.
-     * Defaults keep existing meetings private to signed-in LifeOS users.
-     */
-    access: {
-      mode: { type: String, enum: ACCESS_MODES, default: 'authenticated' },
-      /** Let people without a LifeOS account join by typing their name. */
-      allowGuests: { type: Boolean, default: false },
-      /** Joiners land in a "waiting for approval" state instead of joining. */
-      requireApproval: { type: Boolean, default: false },
-      /** Whether link visitors may see who else is coming. */
-      showParticipants: { type: Boolean, default: true },
-      /** Optional external room (Zoom/Meet/Teams…). When set, JOIN opens it. */
-      externalUrl: { type: String, trim: true, maxlength: 1000 },
-    },
-
-    /**
-     * The shareable invitation link.
-     *
-     * `code` is 72 bits of cryptographic randomness in base64url (~12 chars) —
-     * NOT the Mongo _id. Requirement 22 asks explicitly that the link not expose
-     * a predictable id, so the link never reveals the document id, and
-     * regenerating replaces the code, instantly invalidating the old link.
-     *
-     * The raw code IS the secret (it is the bearer token for the link), so it is
-     * stored directly — unlike the post-meeting `share` token, whose hash is all
-     * that is kept. Hashing this one would make the organizer unable to re-read
-     * their own link, which the product requires ("show the link + Copy button").
-     */
-    invite: {
-      // Indexed via the explicit partial unique index below, not `index: true`.
-      code: { type: String },
-      version: { type: Number, default: 0 },
-      createdAt: { type: Date },
-      regeneratedAt: { type: Date },
-      revokedAt: { type: Date },
-      /** Optional hard expiry. Null = the link lives as long as the meeting. */
-      expiresAt: { type: Date, default: null },
-    },
-
     // Recording metadata. Audio bytes live in object storage, never in MongoDB.
     recording: {
       status: {
@@ -127,6 +80,17 @@ const meetingSchema = new Schema(
       durationSec: { type: Number },
       seen: { type: [Number], default: [], select: false }, // chunk indexes received (idempotent uploads)
       missingChunks: { type: Number, default: 0 },
+      // Hand-off recording: who is recording right now, and how many recording segments were started.
+      // Segment 0 is the original single-recorder flow; claims start at segment 1.
+      segmentCount: { type: Number, default: 0 },
+      activeRecorder: {
+        key: { type: String, maxlength: 80 }, // u:<userId> or g:<random>: link joiners can record too
+        userId: { type: Schema.Types.ObjectId, ref: 'User' },
+        name: { type: String, maxlength: 120 },
+        segment: { type: Number },
+        heartbeatAt: { type: Date },
+        paused: { type: Boolean, default: false },
+      },
     },
 
     // Independent pipeline stages so one failure never blocks the others
@@ -175,6 +139,32 @@ const meetingSchema = new Schema(
       createdAt: { type: Date },
     },
 
+    // Who may press Record. true = any participant (the organizer always can); false = organizer only.
+    recordingPolicy: {
+      anyone: { type: Boolean, default: true },
+    },
+
+    // Minutes for people who joined by link (read-only). The organizer can turn it off.
+    minutesSharing: {
+      enabled: { type: Boolean, default: true },
+      sentAt: { type: Date },
+      lastManualAt: { type: Date },
+    },
+
+    // Shareable invitation link (anyone with the link + password). The token itself is derived,
+    // never stored; see utils/invite.js.
+    invite: {
+      tokenHash: { type: String, select: false },
+      version: { type: Number, default: 1 },
+      enabled: { type: Boolean, default: true },
+      accessMode: { type: String, enum: INVITE_ACCESS_MODES, default: 'link' },
+      passwordHash: { type: String, select: false },
+      failedAttempts: { type: Number, default: 0 },
+      lockedUntil: { type: Date },
+      createdAt: { type: Date },
+      regeneratedAt: { type: Date },
+    },
+
     notes: { type: String, maxlength: 20000 },
   },
   { timestamps: true }
@@ -186,11 +176,6 @@ meetingSchema.index({ tenantId: 1, organizerId: 1, startAt: -1 });
 meetingSchema.index({ tenantId: 1, 'participants.userId': 1, startAt: -1 });
 meetingSchema.index({ seriesId: 1 }, { sparse: true });
 meetingSchema.index({ 'share.tokenHash': 1 }, { sparse: true });
-// Invitation codes must be globally unique. Partial (not sparse) so meetings
-// created before this field existed are not swept into the constraint.
-meetingSchema.index(
-  { 'invite.code': 1 },
-  { unique: true, partialFilterExpression: { 'invite.code': { $type: 'string' } } }
-);
+meetingSchema.index({ 'invite.tokenHash': 1 }, { unique: true, sparse: true });
 
 export default mongoose.model('Meeting', meetingSchema);

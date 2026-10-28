@@ -12,6 +12,39 @@ import {
 import { dateStr, localDayRange, addDays } from './dateHelpers.js';
 import { hasPermission } from '../config/permissions.js';
 import { toObjectId } from '../utils/objectId.js';
+import { focusMinutesOf, productivityScore } from './scoring.service.js';
+
+/**
+ * Productivity score for the last 7 days (including today). Used by both the home dashboard
+ * and the analytics dashboard so the two always agree.
+ */
+export async function weeklyProductivity({ tenantId, userId, activeHabits, now = new Date() }) {
+  const todayRange = localDayRange(dateStr(now));
+  const windowStart = addDays(todayRange.start, -6);
+  const [completed, missed, focusSessions, habitCheckins] = await Promise.all([
+    Task.countDocuments({ tenantId, completedAt: { $gte: windowStart, $lt: todayRange.end }, status: 'completed' }),
+    Task.countDocuments({
+      tenantId,
+      dueDate: { $gte: windowStart, $lt: todayRange.end },
+      $or: [
+        { status: { $in: ['not_started', 'in_progress'] }, dueDate: { $lt: now } },
+        { status: { $in: ['postponed', 'cancelled'] } },
+      ],
+    }),
+    FocusSession.find({ tenantId, userId, status: 'completed', endedAt: { $gte: windowStart, $lt: todayRange.end } })
+      .select('startedAt endedAt pausedMs')
+      .lean(),
+    HabitLog.countDocuments({ tenantId, userId, date: { $gte: dateStr(windowStart), $lte: dateStr(now) } }),
+  ]);
+  return productivityScore({
+    completed,
+    missed,
+    focusMinutes: focusSessions.reduce((sum, s) => sum + focusMinutesOf(s), 0),
+    habitCheckins,
+    activeHabits,
+    days: 7,
+  });
+}
 
 export async function get(user, tenant) {
   const { id: userId, tenantId, permissions } = user;
@@ -47,14 +80,14 @@ export async function get(user, tenant) {
   // 3. Focus
   const [completedFocusToday, activeFocusSession] = await Promise.all([
     FocusSession.find({ tenantId, userId, status: 'completed', endedAt: { $gte: todayRange.start, $lt: todayRange.end } }).lean(),
-    FocusSession.findOne({ tenantId, userId, status: 'active' }).lean(),
+    FocusSession.findOne({ tenantId, userId, status: { $in: ['running', 'paused'] } }).lean(),
   ]);
-  const focusMinutes = completedFocusToday.reduce((sum, s) => sum + (s.duration || 0), 0);
+  const focusMinutes = completedFocusToday.reduce((sum, s) => sum + focusMinutesOf(s), 0);
   const activeFocus = !!activeFocusSession;
 
   // 4. Habits
   const [activeHabitsCount, habitLogsTodayCount] = await Promise.all([
-    Habit.countDocuments({ tenantId, userId, status: 'active' }),
+    Habit.countDocuments({ tenantId, userId, isArchived: false }),
     HabitLog.countDocuments({ tenantId, userId, date: todayStr }),
   ]);
 
@@ -65,8 +98,8 @@ export async function get(user, tenant) {
 
   // 6. Journal
   const [journalToday, myDayToday] = await Promise.all([
-    DailyNote.findOne({ tenantId, userId, date: todayStr, type: 'journal' }).lean(),
-    DailyNote.findOne({ tenantId, userId, date: todayStr, type: 'myDay' }).lean(),
+    DailyNote.findOne({ tenantId, authorId: userId, type: 'journal', entryDate: { $gte: todayRange.start, $lt: todayRange.end } }).select('_id').lean(),
+    DailyNote.findOne({ tenantId, authorId: userId, type: 'myday', entryDate: { $gte: todayRange.start, $lt: todayRange.end } }).select('_id').lean(),
   ]);
 
   // 7. Finance
@@ -95,33 +128,13 @@ export async function get(user, tenant) {
     };
   }
 
-  // 8. Productivity Score (Last 7 days including today)
-  const windowStart = addDays(todayRange.start, -6);
-  const [windowCompleted, windowMissedTasks, windowFocus, windowHabitLogs] = await Promise.all([
-    Task.countDocuments({ tenantId, completedAt: { $gte: windowStart, $lt: todayRange.end }, status: 'completed' }),
-    Task.find({ 
-      tenantId, 
-      dueDate: { $gte: windowStart, $lt: todayRange.end }, 
-      $or: [
-        { status: { $in: ['not_started', 'in_progress'] }, dueDate: { $lt: now } },
-        { status: { $in: ['postponed', 'cancelled'] } }
-      ]
-    }).countDocuments(),
-    FocusSession.find({ tenantId, userId, status: 'completed', endedAt: { $gte: windowStart, $lt: todayRange.end } }).lean(),
-    HabitLog.countDocuments({ tenantId, userId, date: { $gte: dateStr(windowStart), $lte: todayStr } }),
-  ]);
-
-  const rateDenom = windowCompleted + windowMissedTasks;
-  const rate = rateDenom > 0 ? windowCompleted / rateDenom : 0;
-  
-  const focusSeconds = windowFocus.reduce((sum, s) => sum + (s.duration || 0) * 60, 0);
-  const focusRatio = Math.min(focusSeconds / (7 * 60 * 60), 1);
-  
-  const habitRatio = windowHabitLogs / (Math.max(activeHabitsCount, 1) * 7);
-  const cappedHabitRatio = Math.min(habitRatio, 1);
-
-  const productivityScore = Math.round(100 * (0.5 * rate + 0.3 * focusRatio + 0.2 * cappedHabitRatio));
-  const productivityBreakdown = { taskRate: rate, focusRatio, habitRatio: cappedHabitRatio };
+  // 8. Productivity score (last 7 days including today) — shared with the analytics dashboard
+  const { score: productivityScore7, breakdown: productivityBreakdown } = await weeklyProductivity({
+    tenantId,
+    userId,
+    activeHabits: activeHabitsCount,
+    now,
+  });
 
   // 9. Reminders
   const dueSoonTasks = await Task.find({ 
@@ -168,7 +181,7 @@ export async function get(user, tenant) {
       hasMyDayToday: !!myDayToday,
     },
     finance,
-    productivityScore,
+    productivityScore: productivityScore7,
     productivityBreakdown,
     reminders,
   };

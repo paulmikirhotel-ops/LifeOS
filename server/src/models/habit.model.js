@@ -35,6 +35,7 @@ const habitSchema = new mongoose.Schema(
       type: String,
       default: '#6366f1',
     },
+    goalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Goal', index: true },
     isArchived: {
       type: Boolean,
       default: false,

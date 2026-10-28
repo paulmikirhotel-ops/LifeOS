@@ -15,7 +15,7 @@ import {
   unlockNotificationAudio,
   setNotificationSoundEnabled,
 } from '../utils/notificationSound.js';
-import { moduleRoute } from '../utils/notificationMeta.js';
+import { notificationPath, notificationAction } from '../utils/notificationMeta.js';
 
 const NotificationContext = createContext(null);
 
@@ -253,12 +253,22 @@ export function NotificationProvider({ children }) {
       stopOpenTimer();
       stopPolling();
       refreshAll();
+      window.dispatchEvent(new CustomEvent('lifeos:connect-open'));
     };
 
     es.addEventListener('notification', (event) => {
       try {
         const payload = JSON.parse(event.data);
         if (payload?.notification) handleLive(payload.notification);
+      } catch {
+        /* ignore malformed frames */
+      }
+    });
+
+    // LifeOS Connect events (messages, friend requests, typing, presence) share this one connection.
+    es.addEventListener('connect', (event) => {
+      try {
+        window.dispatchEvent(new CustomEvent('lifeos:connect', { detail: JSON.parse(event.data) }));
       } catch {
         /* ignore malformed frames */
       }
@@ -383,8 +393,21 @@ export function NotificationProvider({ children }) {
       if (n?._id && !n.isRead) {
         markRead(n._id);
       }
-      const route = moduleRoute(n?.module || n?.type);
+      const route = notificationPath(n);
       if (route) navigate(route);
+      setPanelOpen(false);
+    },
+    [navigate, markRead, dismissToast]
+  );
+
+  /** Run a notification's action button (e.g. Join Meeting): mark read, then go straight there. */
+  const runNotificationAction = useCallback(
+    (n) => {
+      const action = notificationAction(n);
+      if (!action) return;
+      if (n?.toastId) dismissToast(n.toastId);
+      if (n?._id && !n.isRead) markRead(n._id);
+      navigate(action.path);
       setPanelOpen(false);
     },
     [navigate, markRead, dismissToast]
@@ -401,6 +424,7 @@ export function NotificationProvider({ children }) {
     markRead,
     markAllRead,
     openNotification,
+    runNotificationAction,
     removeNotification,
     dismissToast,
     refresh: refreshAll,

@@ -13,6 +13,7 @@ import {
 import { dateStr, localDayRange, rangeDays, addDays } from './dateHelpers.js';
 import { hasPermission } from '../config/permissions.js';
 import { toObjectId } from '../utils/objectId.js';
+import { weeklyProductivity } from './dashboard.service.js';
 
 export async function overview(user, permissions, { from, to }) {
   const { id: userId, tenantId } = user;
@@ -309,20 +310,10 @@ export async function dashboard(user, permissions) {
     };
   }
 
-  // ── Productivity score (0-100) ───────────────────────────
-  const weekStart = new Date(addDays(new Date(day.start), -6).setHours(0, 0, 0, 0));
-  const [completedWeek, missedWeek] = await Promise.all([
-    Task.countDocuments({ tenantId, status: 'completed', completedAt: { $gte: weekStart, $lt: day.end } }),
-    Task.countDocuments({
-      tenantId,
-      status: { $in: ['not_started', 'in_progress'] },
-      dueDate: { $gte: weekStart, $lt: day.start },
-    }),
-  ]);
-  const taskTotal = completedWeek + missedWeek;
-  const taskRatio = taskTotal > 0 ? completedWeek / taskTotal : 1;
-  const habitRatio = out.habits.total > 0 ? out.habits.completed / out.habits.total : 0.5;
-  out.productivity.score = Math.round(100 * (taskRatio * 0.7 + habitRatio * 0.3));
+  // ── Productivity score (0-100) — same formula as the home dashboard ─────
+  out.productivity.score = (
+    await weeklyProductivity({ tenantId, userId, activeHabits: out.habits.total, now: new Date() })
+  ).score;
 
   return out;
 }

@@ -21,7 +21,7 @@ export default function MeetingActionItemsPage() {
   const load = useCallback(async () => {
     try {
       const res = await meetingsApi.allActionItems({ status, mine: mine ? 'true' : undefined });
-      setItems(res.data.items);
+      setItems(res.data?.items || []);
     } catch (err) {
       addToast(formatApiError(err), 'error');
       setItems([]);

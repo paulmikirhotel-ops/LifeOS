@@ -75,6 +75,7 @@ async function call(url, init, timeoutMs) {
     const body = (await res.text().catch(() => '')).slice(0, 300);
     const err = new Error(`Speech-to-text provider returned ${res.status}${body ? `: ${body}` : ''}`);
     // Bad key / bad request will not fix itself on retry (429 and 5xx will).
+    err.status = res.status;
     err.permanent = res.status >= 400 && res.status < 500 && res.status !== 429 && res.status !== 408;
     throw err;
   }

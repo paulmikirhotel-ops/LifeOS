@@ -2,7 +2,6 @@ import express, { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import * as meetingController from '../controllers/meeting.controller.js';
-import * as inviteController from '../controllers/meetingInvite.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireTenant } from '../middleware/requireTenant.js';
 import { requirePermission } from '../middleware/requirePermission.js';
@@ -11,6 +10,7 @@ import { MEETING_TYPES, RECURRENCE_FREQUENCIES } from '../models/meeting.model.j
 import { ACTION_STATUSES, ACTION_PRIORITIES } from '../models/actionItem.model.js';
 import { env } from '../config/env.js';
 import { EXPORT_MATRIX } from '../services/meetingExport.service.js';
+import { INVITE_ACCESS_MODES, INVITE_PASSWORD_MIN, INVITE_PASSWORD_MAX } from '../utils/invite.js';
 
 const router = Router();
 
@@ -66,10 +66,28 @@ const meetingBase = z.object({
   notes: z.string().max(20000).optional(),
 });
 
+const inviteSettingsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    accessMode: z.enum(INVITE_ACCESS_MODES).optional(),
+    password: z.string().min(INVITE_PASSWORD_MIN, `Use at least ${INVITE_PASSWORD_MIN} characters`).max(INVITE_PASSWORD_MAX).optional(),
+    regeneratePassword: z.boolean().optional(),
+    shareMinutes: z.boolean().optional(),
+    allowRecording: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'Nothing to update');
+
 const endAfterStart = (v) => !v.startAt || !v.endAt || Date.parse(v.endAt) > Date.parse(v.startAt);
 const endMsg = { message: 'endAt must be after startAt', path: ['endAt'] };
 
-const createSchema = meetingBase.omit({ notes: true }).refine(endAfterStart, endMsg);
+const createSchema = meetingBase
+  .omit({ notes: true })
+  .extend({
+    // Optional: choose the link password / access level up front. Otherwise a password is generated.
+    invitePassword: z.string().min(INVITE_PASSWORD_MIN, `Use at least ${INVITE_PASSWORD_MIN} characters`).max(INVITE_PASSWORD_MAX).optional(),
+    inviteAccessMode: z.enum(INVITE_ACCESS_MODES).optional(),
+  })
+  .refine(endAfterStart, endMsg);
 const updateSchema = meetingBase.partial().refine(endAfterStart, endMsg);
 
 const listQuery = z.object({
@@ -118,12 +136,13 @@ const actionCreateSchema = actionBase;
 const actionPatchSchema = actionBase.partial();
 
 const endSchema = z.object({
-  totalChunks: z.number().int().min(0).max(20000).optional(),
+  totalChunks: z.number().int().min(0).max(100000).optional(),
   durationSec: z.number().int().min(0).max(24 * 3600).optional(),
 });
 const importSchema = z.object({ text: z.string().min(1).max(500000) });
 const speakerSchema = z.object({ label: z.string().min(1).max(60), name: z.string().max(120).optional() });
 const retrySchema = z.object({ stage: z.enum(['finalize', 'transcribe', 'analyze', 'minutes']) });
+const sendMinutesSchema = z.object({ emails: z.array(z.string().max(254)).max(20).optional() });
 const minutesSchema = z.object({ content: z.string().min(1).max(100000) });
 const askSchema = z.object({
   question: z.string().trim().min(2).max(500),
@@ -138,25 +157,11 @@ const exportQuery = z.object({
   format: z.enum(['txt', 'pdf', 'docx', 'csv']),
 });
 const deleteQuery = z.object({ scope: z.enum(['one', 'series']).optional() });
-const chunkParams = z.object({ id: objectId, index: z.coerce.number().int().min(0).max(19999) });
+const chatBody = z.object({ text: z.string().max(4000) });
+const beatBody = z.object({ paused: z.boolean().optional() });
+const chunkParams = z.object({ id: objectId, index: z.coerce.number().int().min(0).max(99999) });
 const offsetQuery = z.object({ offsetMs: z.coerce.number().int().min(0).max(24 * 3600 * 1000).default(0) });
 const itemsQuery = z.object({ status: z.enum(ACTION_STATUSES).optional(), mine: z.enum(['true', 'false']).optional() });
-
-// ── invitation-link schemas (Phase 1) ───────────────────────────────────
-
-const accessSchema = z
-  .object({
-    mode: z.enum(['public', 'authenticated', 'restricted']).optional(),
-    allowGuests: z.boolean().optional(),
-    requireApproval: z.boolean().optional(),
-    showParticipants: z.boolean().optional(),
-    // Only http(s) is accepted; the service re-checks before storing.
-    externalUrl: z.union([z.string().url().max(1000), z.literal(''), z.null()]).optional(),
-  })
-  .refine((v) => Object.keys(v).length > 0, 'Provide at least one access setting');
-
-const reviewSchema = z.object({ decision: z.enum(['approve', 'decline']) });
-const respondSchema = z.object({ response: z.enum(['accepted', 'declined', 'tentative']) });
 
 // Audio bodies are raw bytes (not JSON) and bounded by MEETING_CHUNK_MAX_MB.
 const rawAudio = express.raw({ type: () => true, limit: env.meetings.chunkMaxBytes });
@@ -173,8 +178,11 @@ const perUser = (limit, message) =>
     message: { success: false, message, code: 'RATE_LIMITED' },
   });
 const chunkLimiter = perUser(60, 'Uploading audio too quickly');
+const chatLimiter = perUser(120, 'Chat is going too fast');
 const liveClipLimiter = perUser(20, 'Too many live transcript clips');
 const askLimiter = perUser(15, 'Too many questions, slow down');
+const roomJoinLimiter = perUser(30, 'Too many join attempts, slow down');
+const roomPingLimiter = perUser(10, 'Too many room updates');
 
 // Transcript ingestion is the chatty endpoint; give it its own ceiling.
 const transcriptLimiter = rateLimit({
@@ -196,8 +204,6 @@ router.use(authenticate, requireTenant);
 router.get('/capabilities', requirePermission('meetings.view'), meetingController.capabilities);
 router.get('/members', requirePermission('meetings.view'), meetingController.members);
 router.get('/action-items', requirePermission('meetings.view'), validateRequest(itemsQuery, 'query'), meetingController.allActionItems);
-// Meetings this user was invited to and still has to answer.
-router.get('/invitations', requirePermission('meetings.view'), inviteController.myInvitations);
 
 router.get('/', requirePermission('meetings.view'), validateRequest(listQuery, 'query'), meetingController.list);
 router.post('/', requirePermission('meetings.create'), validateRequest(createSchema), meetingController.create);
@@ -206,33 +212,19 @@ router.get('/:id', requirePermission('meetings.view'), meetingController.get);
 router.put('/:id', requirePermission('meetings.edit'), validateRequest(updateSchema), meetingController.update);
 router.delete('/:id', requirePermission('meetings.delete'), validateRequest(deleteQuery, 'query'), meetingController.remove);
 
-// invitation link, access rules & attendance (Phase 1)
-router.get('/:id/invite', requirePermission('meetings.view'), inviteController.inviteInfo);
-router.post('/:id/invite/regenerate', requirePermission('meetings.edit'), inviteController.regenerate);
-router.post('/:id/invite/revoke', requirePermission('meetings.edit'), inviteController.revoke);
-router.patch('/:id/access', requirePermission('meetings.edit'), validateRequest(accessSchema), inviteController.updateAccess);
-
-router.get('/:id/attendance', requirePermission('meetings.view'), inviteController.attendance);
-router.post(
-  '/:id/attendance/:attendanceId/review',
-  requirePermission('meetings.edit'),
-  validateRequest(reviewSchema),
-  inviteController.reviewAttendance
-);
-router.delete('/:id/attendance/:attendanceId', requirePermission('meetings.edit'), inviteController.removeAttendance);
-
-// joining / leaving from inside the app
-router.post('/:id/join', requirePermission('meetings.view'), inviteController.joinMeeting);
-router.post('/:id/respond', requirePermission('meetings.view'), validateRequest(respondSchema), inviteController.respond);
-router.post('/:id/leave', requirePermission('meetings.view'), inviteController.leaveMeeting);
-
 // lifecycle
 router.post('/:id/start', requirePermission('meetings.edit'), meetingController.start);
 router.post('/:id/end', requirePermission('meetings.edit'), validateRequest(endSchema), meetingController.end);
 router.post('/:id/cancel', requirePermission('meetings.edit'), meetingController.cancel);
 
 // recording
-router.put('/:id/recording/chunks/:index', chunkLimiter, requirePermission('meetings.edit'), validateRequest(chunkParams, 'params'), rawAudio, meetingController.uploadChunk);
+router.post('/:id/recording/claim', requirePermission('meetings.view'), meetingController.claimRecording);
+router.post('/:id/recording/release', requirePermission('meetings.view'), meetingController.releaseRecording);
+router.get('/:id/chat', chatLimiter, requirePermission('meetings.view'), meetingController.chatList);
+router.post('/:id/chat', chatLimiter, requirePermission('meetings.view'), validateRequest(chatBody), meetingController.chatSend);
+router.post('/:id/recording/beat', requirePermission('meetings.view'), validateRequest(beatBody), meetingController.recordingBeat);
+// Any participant may upload IF they are the current recorder (checked in the service), so only meetings.view here.
+router.put('/:id/recording/chunks/:index', chunkLimiter, requirePermission('meetings.view'), validateRequest(chunkParams, 'params'), rawAudio, meetingController.uploadChunk);
 router.get('/:id/recording/url', requirePermission('meetings.view'), meetingController.recordingUrl);
 router.post('/:id/transcribe-chunk', liveClipLimiter, requirePermission('meetings.edit'), validateRequest(offsetQuery, 'query'), rawAudio, meetingController.transcribeChunk);
 
@@ -249,6 +241,7 @@ router.get('/:id/summary', requirePermission('meetings.view'), meetingController
 router.post('/:id/generate-summary', requirePermission('meetings.edit'), meetingController.generateSummary);
 router.get('/:id/minutes', requirePermission('meetings.view'), meetingController.getMinutes);
 router.put('/:id/minutes', requirePermission('meetings.edit'), validateRequest(minutesSchema), meetingController.saveMinutes);
+router.post('/:id/minutes/send', requirePermission('meetings.edit'), validateRequest(sendMinutesSchema), meetingController.sendMinutes);
 router.post('/:id/generate-minutes', requirePermission('meetings.edit'), meetingController.generateMinutes);
 router.post('/:id/process', requirePermission('meetings.edit'), validateRequest(retrySchema), meetingController.retry);
 router.post('/:id/ask', askLimiter, requirePermission('meetings.view'), validateRequest(askSchema), meetingController.ask);
@@ -266,5 +259,16 @@ router.get('/:id/export', requirePermission('meetings.view'), validateRequest(ex
 router.get('/:id/share', requirePermission('meetings.view'), meetingController.getShare);
 router.post('/:id/share', requirePermission('meetings.edit'), validateRequest(shareSchema), meetingController.createShare);
 router.delete('/:id/share', requirePermission('meetings.edit'), meetingController.revokeShare);
+
+// invitation link (organizer only — enforced in the service via loadForManage)
+router.get('/:id/invite', requirePermission('meetings.view'), meetingController.getInvite);
+router.put('/:id/invite', requirePermission('meetings.edit'), validateRequest(inviteSettingsSchema), meetingController.updateInvite);
+router.post('/:id/invite/regenerate', requirePermission('meetings.edit'), meetingController.regenerateInvite);
+router.get('/:id/invite/participants', requirePermission('meetings.view'), meetingController.inviteParticipants);
+
+// video room (any workspace member who can see the meeting; the service re-checks access per meeting)
+router.post('/:id/room', roomJoinLimiter, requirePermission('meetings.view'), meetingController.roomJoin);
+router.post('/:id/room/ping', roomPingLimiter, requirePermission('meetings.view'), meetingController.roomPing);
+router.post('/:id/room/leave', roomJoinLimiter, requirePermission('meetings.view'), meetingController.roomLeave);
 
 export default router;

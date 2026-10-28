@@ -5,6 +5,7 @@ import { ROLE_PERMISSIONS } from '../config/permissions.js';
 import { generateToken, hashToken, signAccessToken, signRefreshToken } from '../utils/token.js';
 import { sendMail } from '../utils/mailer.js';
 import { env } from '../config/env.js';
+import { removeAllForUser as removePush } from './push.service.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -47,7 +48,50 @@ async function pendingInvites(email) {
 }
 
 /** Creates the user + (optionally) their first workspace. Used by register & invite-accept. */
-export async function createUserWithWorkspace({ name, email, password, tenantType, organizationName }) {
+export const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 60 * 1000;
+
+/** Milliseconds the user still has to wait before another verification email may be sent (0 = go ahead). */
+export function resendWaitMs(verificationExpiresAt, now = Date.now()) {
+  if (!verificationExpiresAt) return 0;
+  const sentAt = new Date(verificationExpiresAt).getTime() - VERIFICATION_TTL_MS;
+  return Math.max(0, RESEND_COOLDOWN_MS - (now - sentAt));
+}
+
+/** Creates a fresh 24-hour verification link and emails it (dev: logged by the mailer). */
+async function sendVerificationEmail(user) {
+  const token = generateToken();
+  user.verificationTokenHash = hashToken(token);
+  user.verificationExpiresAt = new Date(Date.now() + VERIFICATION_TTL_MS);
+  await user.save();
+  await sendMail({
+    to: user.email,
+    subject: 'Verify your LifeOS email',
+    text: `Verify your email: ${env.clientUrls[0]}/verify-email?token=${token}`,
+  });
+}
+
+/**
+ * Sends a new verification link to a signed-in, unverified user.
+ * Limited to one email per minute so it cannot be used to spam an inbox.
+ */
+export async function resendVerification(userId) {
+  const user = await User.findById(userId).select('+verificationTokenHash');
+  if (!user || user.status !== 'active') throw ApiError.unauthorized('Account not available');
+  if (user.isEmailVerified) return { alreadyVerified: true };
+
+  const wait = resendWaitMs(user.verificationExpiresAt);
+  if (wait > 0) {
+    throw new ApiError(429, `Please wait ${Math.ceil(wait / 1000)} seconds before asking for another email`, {
+      code: 'RATE_LIMITED',
+    });
+  }
+
+  await sendVerificationEmail(user);
+  return { sent: true };
+}
+
+async function createUserWithWorkspace({ name, email, password, tenantType, organizationName }) {
   if (!EMAIL_RE.test(email)) throw ApiError.badRequest('A valid email is required');
   const exists = await User.findOne({ email }).select('+passwordHash');
   if (exists && exists.status !== 'deleted') {
@@ -77,16 +121,7 @@ export async function createUserWithWorkspace({ name, email, password, tenantTyp
   }
   await user.save();
 
-  // Email verification token (dev: logged by mailer).
-  const token = generateToken();
-  user.verificationTokenHash = hashToken(token);
-  user.verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  await user.save();
-  await sendMail({
-    to: user.email,
-    subject: 'Verify your LifeOS email',
-    text: `Verify your email: ${env.clientUrls[0]}/verify-email?token=${token}`,
-  });
+  await sendVerificationEmail(user);
 
   return { user, tenant, membership };
 }
@@ -145,6 +180,7 @@ export async function refreshSession(refreshToken) {
 }
 
 export async function logout(userId) {
+  await removePush(userId);
   await User.updateOne({ _id: userId }, { $unset: { refreshTokenHash: 1, refreshTokenExpiresAt: 1 } });
 }
 

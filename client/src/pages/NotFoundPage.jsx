@@ -2,10 +2,12 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Home, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui.jsx';
+import Watermark from '../components/Watermark.jsx';
 
 export default function NotFoundPage() {
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+    <div className="relative isolate min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+      <Watermark />
       <div className="w-24 h-24 rounded-3xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center mb-8">
         <AlertCircle className="w-12 h-12 text-indigo-600" />
       </div>

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { attachOffline } from '../offline/attach.js';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -9,6 +10,9 @@ const api = axios.create({
   // server always sends the full payload.
   headers: { 'Cache-Control': 'no-store' },
 });
+
+// Offline mode: must come before the interceptors below so offline answers flow through them.
+attachOffline(api);
 
 // One refresh at a time. The API rotates refresh tokens, so parallel refreshes (e.g. a
 // recording chunk upload and a poll both getting a 401 after the 15-minute access token

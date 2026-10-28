@@ -15,6 +15,8 @@ process.env.NODE_ENV = 'test';
 
 const mongoose = (await import('mongoose')).default;
 mongoose.set('bufferCommands', false); // notifications fail fast instead of waiting for a DB
+
+// FIX: Using strict relative paths instead of absolute/nested paths
 const { Meeting, TranscriptSegment, ActionItem, Job } = await import('../src/models/index.js');
 const { __test } = await import('../src/services/meetingPipeline.service.js');
 

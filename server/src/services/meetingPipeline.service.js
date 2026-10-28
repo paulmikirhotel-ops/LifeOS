@@ -2,11 +2,13 @@ import { z } from 'zod';
 import { Meeting, TranscriptSegment, ActionItem, Job } from '../models/index.js';
 import { env } from '../config/env.js';
 import * as storage from './storage.service.js';
+import { assembleRecording } from './assembleRecording.js';
 import * as stt from './stt.service.js';
 import * as ai from './ai.service.js';
 import { registerJobHandler, enqueue, updatePayload } from './job.service.js';
 import { chunkSegments, fmtClock } from '../utils/transcript.js';
 import * as notificationService from './notification.service.js';
+import { sendMinutesToParticipants } from './meetingMinutes.service.js';
 
 /**
  * Post-meeting pipeline (all background jobs, all retryable, all independent):
@@ -46,6 +48,54 @@ async function notifyOrganizer(meeting, title, message) {
   });
 }
 
+const missingMessage = (names) => names.map((n) => `Missing environment variable: ${n}`).join('; ');
+
+/** Names (never values) of the settings that keep transcription from running. */
+function sttMissing() {
+  return [env.stt.provider !== 'deepgram' && 'STT_PROVIDER (set to deepgram)', !env.stt.apiKey && 'STT_API_KEY'].filter(Boolean);
+}
+
+/** Names (never values) of the settings that keep the AI summary from running. */
+function aiMissing() {
+  return [
+    !['anthropic', 'openai'].includes(env.ai.provider) && 'AI_PROVIDER (anthropic or openai)',
+    !env.ai.apiKey && 'AI_API_KEY',
+    env.ai.provider === 'openai' && !env.ai.model && 'AI_MODEL',
+  ].filter(Boolean);
+}
+
+const permanentError = (message) => Object.assign(new Error(message), { permanent: true });
+
+/**
+ * Checks, from the server, that the presigned URL really works before we pay a speech-to-text provider to use it.
+ * A private bucket answers 403 when the region/endpoint/credentials don't match the signature, and the provider
+ * would only report a vague "could not fetch the URL".
+ */
+async function assertSignedUrlWorks(url) {
+  let res;
+  try {
+    res = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' }, signal: AbortSignal.timeout(20_000) });
+  } catch (err) {
+    throw new Error(`Could not reach recording storage: ${err.cause?.code || err.message}`);
+  }
+  await res.body?.cancel().catch(() => {});
+  if (res.status === 403 || res.status === 401) {
+    throw permanentError('Recording storage refused the signed URL (403). Check that STORAGE_REGION and STORAGE_ENDPOINT match your Backblaze bucket and that the application key can read it.');
+  }
+  if (res.status === 404) throw permanentError('The recording file was not found in storage.');
+  if (!res.ok && res.status !== 206) throw new Error(`Recording storage answered ${res.status}`);
+}
+
+async function readRecordingBytes(key) {
+  const { stream } = await storage.getObject(key);
+  const parts = [];
+  for await (const p of stream) parts.push(p);
+  return Buffer.concat(parts);
+}
+
+// Above this size the audio is not pulled through the API server as a fallback (memory on small hosts).
+const BYTES_FALLBACK_MAX = 200 * 1024 * 1024;
+
 async function loadSegments(meetingId) {
   return TranscriptSegment.find({ meetingId }).sort({ seq: 1 }).select('seq speakerLabel speakerName text startMs').lean();
 }
@@ -56,7 +106,15 @@ async function finalizeRecording(job) {
   const meeting = await Meeting.findById(job.meetingId).select('+recording.seen');
   if (!meeting) return;
   const { tenantId, _id } = meeting;
-  if (meeting.recording.status === 'ready' && meeting.recording.storageKey) return; // idempotent
+  if (meeting.recording.status === 'ready' && meeting.recording.storageKey) {
+    // Idempotent - but do NOT just stop here. If an earlier run saved the recording and then died (for example a
+    // "read ECONNRESET" right after the file was assembled), the retry used to return silently and nothing ever
+    // queued the transcription: the recording existed, the transcript never came. Carry on from where it stalled.
+    console.log(`[recording] already saved (meeting ${_id}) - checking the next step`);
+    const stage = meeting.processing?.transcript;
+    if (!stage || stage === 'idle') await startTranscriptStage(meeting);
+    return;
+  }
 
   const seen = [...new Set(meeting.recording.seen || [])].sort((a, b) => a - b);
   if (!seen.length) {
@@ -64,59 +122,124 @@ async function finalizeRecording(job) {
     return; // nothing was recorded (e.g. transcript pasted manually)
   }
   const total = job.payload?.totalChunks ?? seen[seen.length - 1] + 1;
-  const missing = Math.max(0, total - seen.length);
-
-  const mime = meeting.recording.mimeType || 'audio/webm';
-  const dest = storage.keys.recording(tenantId, _id, storage.extFor(mime));
-  const chunkKeys = seen.map((i) => storage.keys.chunk(tenantId, _id, i));
+  const missing = Math.max(0, total - seen.length); // meaningful for single-segment recordings only
 
   await Meeting.updateOne({ _id }, { $set: { 'recording.status': 'uploading' } });
-  const size = await storage.assemble(chunkKeys, dest, mime);
+  // One segment = the original flow. Several segments (someone took over recording) are joined into one file.
+  const built = await assembleRecording({
+    tenantId,
+    meetingId: _id,
+    seen,
+    mime: meeting.recording.mimeType || 'audio/webm',
+    storage,
+  });
+  const { dest, size, chunkKeys } = built;
+  const multi = built.segments > 1;
   await Meeting.updateOne(
     { _id },
     {
       $set: {
         'recording.status': 'ready',
         'recording.storageKey': dest,
+        'recording.mimeType': built.mime,
         'recording.sizeBytes': size,
         'recording.chunkCount': seen.length,
-        'recording.missingChunks': missing,
+        // Chunk numbering is per segment, so "missing" can only be judged for a single-segment recording.
+        'recording.missingChunks': multi ? 0 : missing,
         'recording.durationSec': job.payload?.durationSec ?? meeting.durationSec,
       },
+      $unset: { 'recording.activeRecorder': 1 },
     }
   );
+  if (multi && !built.joined) {
+    console.warn(`[recording] meeting ${_id}: ${built.segments} segments could not be joined cleanly; playback may only cover the first part`);
+  }
   // Only after the assembled file exists do we remove the temporary chunks.
   await Promise.all(chunkKeys.map((k) => storage.deleteObject(k).catch(() => {})));
 
-  const next = env.stt.batch && stt.sttConfigured() ? 'transcribe' : 'analyze';
-  const hasSegments = (await TranscriptSegment.countDocuments({ meetingId: _id })) > 0;
-  if (next === 'transcribe') {
-    await setStage(_id, { transcript: 'pending' });
+  console.log(`[recording] saved to storage (meeting ${_id}, ${Math.round(size / 1024)} KB, ${seen.length} chunk(s)${missing ? `, ${missing} missing` : ''})`);
+  await startTranscriptStage(meeting);
+}
+
+/**
+ * Decides what happens after the recording is saved - and never stays silent about it. Every path ends with either
+ * a queued job or a visible stage state (with the reason), so the meeting page can always tell the user what is going on.
+ */
+async function startTranscriptStage(meeting) {
+  const { tenantId, _id } = meeting;
+  const segCount = await TranscriptSegment.countDocuments({ meetingId: _id });
+
+  if (env.stt.batch && stt.sttConfigured()) {
+    await setStage(_id, { transcript: 'pending', lastError: undefined });
     await enqueue('transcribe', { tenantId, meetingId: _id });
-  } else if (hasSegments && ai.aiConfigured()) {
-    await setStage(_id, { summary: 'pending', actionItems: 'pending' });
-    await enqueue('analyze', { tenantId, meetingId: _id });
+    return;
   }
+  if (segCount > 0) {
+    // A live/manual transcript already exists; summarise that.
+    await setStage(_id, { transcript: 'done' });
+    await startSummaryStage(meeting, segCount);
+    return;
+  }
+  const reason = !stt.sttConfigured()
+    ? `Transcription is not set up on the server. ${missingMessage(sttMissing())}`
+    : 'Full-recording transcription is switched off (STT_BATCH=false) and no live transcript was captured.';
+  console.warn(`[transcription] not started (meeting ${_id}): ${reason}`);
+  await setStage(_id, { transcript: 'failed', lastError: reason.slice(0, 480) });
+}
+
+async function startSummaryStage(meeting, segCount) {
+  const { tenantId, _id } = meeting;
+  if (!segCount) return;
+  if (!ai.aiConfigured()) {
+    const reason = `AI summary is not set up on the server. ${missingMessage(aiMissing())}`;
+    console.warn(`[summary] not started (meeting ${_id}): ${reason}`);
+    await setStage(_id, { summary: 'failed', actionItems: 'failed', lastError: reason.slice(0, 480) });
+    return;
+  }
+  await setStage(_id, { summary: 'pending', actionItems: 'pending' });
+  await enqueue('analyze', { tenantId, meetingId: _id });
 }
 
 // ── 2. batch transcription (diarized) ─────────────────────────────────
 
 async function transcribeRecording(job) {
   const meeting = await Meeting.findById(job.meetingId);
-  if (!meeting?.recording?.storageKey) throw Object.assign(new Error('No recording to transcribe'), { permanent: true });
-  await setStage(meeting._id, { transcript: 'processing' });
+  if (!meeting?.recording?.storageKey) throw permanentError('No recording to transcribe');
+  if (!stt.sttConfigured()) throw permanentError(`Transcription is not set up on the server. ${missingMessage(sttMissing())}`);
+  await setStage(meeting._id, { transcript: 'processing', lastError: undefined });
 
-  const { url } = await storage.getSignedReadUrl(meeting.recording.storageKey, { meetingId: meeting._id, ttlSec: 3600 });
+  const key = meeting.recording.storageKey;
+  const mime = meeting.recording.mimeType || 'audio/webm';
+  const local = storage.storageDriver() === 'local';
+  const bytesViaServer = async () => stt.transcribeBuffer(await readRecordingBytes(key), mime, { diarize: true });
+
   let segments;
-  if (storage.storageDriver() === 'local') {
+  if (local) {
     // Dev only: the provider cannot reach localhost, so send bytes.
-    const { stream } = await storage.getObject(meeting.recording.storageKey);
-    const parts = [];
-    for await (const p of stream) parts.push(p);
-    segments = await stt.transcribeBuffer(Buffer.concat(parts), meeting.recording.mimeType, { diarize: true });
+    console.log(`[transcription] provider request started (local storage: sending audio bytes, meeting ${meeting._id})`);
+    segments = await bytesViaServer();
   } else {
-    segments = await stt.transcribeUrl(url, { diarize: true });
+    // The bucket is private: the provider gets a short-lived presigned URL, never the storage credentials.
+    const { url } = await storage.getSignedReadUrl(key, { meetingId: meeting._id, ttlSec: 3600 });
+    console.log(`[transcription] recording URL generated (expires in 60 min, meeting ${meeting._id})`);
+    await assertSignedUrlWorks(url);
+    console.log('[transcription] storage check passed: the signed URL is readable');
+    console.log(`[transcription] provider request started (${env.stt.provider}, model ${env.stt.model}, via signed URL)`);
+    try {
+      segments = await stt.transcribeUrl(url, { diarize: true });
+    } catch (err) {
+      // The provider could not use the URL (it answered 400/404/415/422). Fall back to sending the audio from
+      // here - slower, but it still works, and the bucket stays private.
+      const size = meeting.recording.sizeBytes || 0;
+      if ([400, 404, 415, 422].includes(err.status) && size && size <= BYTES_FALLBACK_MAX) {
+        console.warn(`[transcription] provider could not fetch the URL (${err.message.slice(0, 160)}) - sending the audio from the server instead`);
+        segments = await bytesViaServer();
+      } else {
+        throw err;
+      }
+    }
   }
+  console.log(`[transcription] provider request completed (${segments.length} segment(s), meeting ${meeting._id})`);
 
   if (segments.length) {
     // Replace live/batch segments ONLY after the new transcript exists (a failure keeps the live one).
@@ -127,12 +250,19 @@ async function transcribeRecording(job) {
     );
     await Meeting.updateOne({ _id: meeting._id }, { $set: { transcriptSeq: segments.length } });
   }
-  await setStage(meeting._id, { transcript: 'done' });
 
-  if (segments.length && ai.aiConfigured()) {
-    await setStage(meeting._id, { summary: 'pending', actionItems: 'pending' });
-    await enqueue('analyze', { tenantId: meeting.tenantId, meetingId: meeting._id });
+  // Whatever is stored for THIS meeting now (new batch transcript, or the live one that was kept).
+  const total = await TranscriptSegment.countDocuments({ meetingId: meeting._id });
+  if (!total) {
+    // Used to be "done" with nothing to show and no summary - a silent dead end. Say what happened instead.
+    const reason = 'No speech was detected in the recording. If everyone was muted or the microphone was blocked, the audio is silent.';
+    console.warn(`[transcription] ${reason} (meeting ${meeting._id})`);
+    await setStage(meeting._id, { transcript: 'failed', lastError: reason });
+    return;
   }
+  console.log(`[transcription] transcript saved (${total} segment(s), meeting ${meeting._id})`);
+  await setStage(meeting._id, { transcript: 'done' });
+  await startSummaryStage(meeting, total);
 }
 
 // ── 3. analysis: map-reduce over the transcript ───────────────────────
@@ -308,12 +438,14 @@ export function parseIsoDate(s) {
 async function analyze(job) {
   const meeting = await Meeting.findById(job.meetingId);
   if (!meeting) return;
+  if (!ai.aiConfigured()) throw permanentError(`AI summary is not set up on the server. ${missingMessage(aiMissing())}`);
   await setStage(meeting._id, { summary: 'processing', actionItems: 'processing', lastError: undefined });
 
   const segments = await loadSegments(meeting._id);
   if (!segments.length) throw Object.assign(new Error('There is no transcript to analyse yet'), { permanent: true });
 
-  const chunks = chunkSegments(segments);
+  const chunks = chunkSegments(segments, env.ai.chunkChars);
+  console.log(`[summary] AI request started (${env.ai.provider}, ${segments.length} transcript segment(s) in ${chunks.length} part(s), meeting ${meeting._id})`);
   // Resume support: chunk results are saved on the job so a retry never re-pays for finished chunks.
   const fresh = await Job.findById(job._id).lean();
   const saved = fresh?.payload?.chunkResults && fresh.payload.total === chunks.length ? fresh.payload.chunkResults : [];
@@ -338,6 +470,7 @@ async function analyze(job) {
     }
   );
   await setStage(meeting._id, { summary: 'done' });
+  console.log(`[summary] summary saved (meeting ${meeting._id})`);
 
   // Replace only untouched AI items; manual items and items already pushed to Tasks are kept.
   await ActionItem.deleteMany({ meetingId: meeting._id, source: 'ai', taskId: { $exists: false }, status: 'pending' });
@@ -451,6 +584,8 @@ ${JSON.stringify({
   await Meeting.updateOne({ _id: meeting._id }, { $set: { 'minutes.content': markdown, 'minutes.generatedAt': new Date(), 'minutes.editedAt': null } });
   await setStage(meeting._id, { minutes: 'done' });
   await notifyOrganizer(meeting, 'Meeting minutes ready', `AI summary and minutes for "${meeting.title}" are ready.`);
+  // Everyone who joined by link (and left an e-mail) or has an account gets the read-only minutes link. Once per meeting.
+  await sendMinutesToParticipants(meeting._id);
 }
 
 // ── registration ──────────────────────────────────────────────────────

@@ -27,11 +27,28 @@ function requireAi() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Free AI plans cap requests/tokens per minute. Requests leave one at a time, at least minIntervalMs apart.
+let paceChain = Promise.resolve();
+let lastRequestAt = 0;
+function pace() {
+  const gap = env.ai.minIntervalMs || 0;
+  if (!gap) return Promise.resolve();
+  const turn = paceChain.then(async () => {
+    const wait = lastRequestAt + gap - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastRequestAt = Date.now();
+  });
+  paceChain = turn.catch(() => {});
+  return turn;
+}
+
 async function post(url, headers, body) {
-  const delays = [1000, 4000, 12000];
+  // Patient with rate limits (429): up to 6 tries, honouring the provider's Retry-After (max 60 s each).
+  const delays = [1000, 4000, 12000, 20000, 30000];
   let lastErr;
   for (let attempt = 0; attempt <= delays.length; attempt += 1) {
     try {
+      await pace();
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...headers },
@@ -40,13 +57,14 @@ async function post(url, headers, body) {
       });
       if (res.ok) return await res.json();
       const text = (await res.text().catch(() => '')).slice(0, 300);
-      const err = new Error(`AI provider returned ${res.status}${text ? `: ${text}` : ''}`);
+      const tooLarge = res.status === 413 || /request too large|reduce your message size|tokens per (minute|request)/i.test(text);
+      const err = new Error(`AI provider returned ${res.status}${text ? `: ${text}` : ''}${tooLarge ? ' - the transcript part is too big for this plan: lower AI_CHUNK_CHARS (for example 8000) on the server' : ''}`);
       const retryable = res.status === 429 || res.status >= 500;
       err.permanent = !retryable;
       if (!retryable) throw err;
       lastErr = err;
       const ra = parseInt(res.headers.get('retry-after') || '', 10);
-      if (attempt < delays.length) await sleep(Number.isFinite(ra) ? Math.min(ra, 20) * 1000 : delays[attempt]);
+      if (attempt < delays.length) await sleep(Number.isFinite(ra) ? Math.min(ra, 60) * 1000 : delays[attempt]);
     } catch (err) {
       if (err.permanent) throw err;
       lastErr = err;
@@ -80,14 +98,23 @@ export async function generateText({ system, prompt, maxTokens = 2000, temperatu
     {
       model: a.model,
       temperature,
-      [a.maxTokensParam]: maxTokens,
+      [a.maxTokensParam]: Math.ceil(maxTokens * (a.tokenMultiplier || 1)),
+      ...(a.reasoningEffort ? { reasoning_effort: a.reasoningEffort } : {}),
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: prompt },
       ],
     }
   );
-  return json.choices?.[0]?.message?.content || '';
+  const choice = json.choices?.[0];
+  const text = choice?.message?.content || '';
+  if (!text.trim() && choice?.finish_reason === 'length') {
+    // A reasoning model spent its whole allowance thinking and never wrote the answer.
+    const err = new Error('The AI model ran out of output space before answering. Set AI_REASONING_EFFORT=low and AI_TOKEN_MULTIPLIER=4 on the server (for reasoning models), or choose a model that does not reason.');
+    err.permanent = true;
+    throw err;
+  }
+  return text;
 }
 
 /** Pulls the first JSON object out of a model reply (tolerates code fences / preamble). */

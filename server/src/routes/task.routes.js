@@ -28,6 +28,8 @@ const taskSchema = z.object({
     )
     .optional(),
   notes: z.string().optional(),
+  goalId: z.string().nullable().optional(),
+  milestoneId: z.string().nullable().optional(),
 });
 
 const taskPatchSchema = taskSchema.partial();

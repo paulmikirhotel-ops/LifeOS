@@ -8,8 +8,12 @@ import { env } from './config/env.js';
 import { connectDB, disconnectDB } from './config/db.js';
 import { createApp } from './app.js';
 import { startScheduler, stopScheduler } from './services/scheduler.service.js';
+import { startCallSweeper, stopCallSweeper } from './services/connectCall.service.js';
 import { startJobRunner, stopJobRunner } from './services/job.service.js';
 import { registerMeetingJobs } from './services/meetingPipeline.service.js';
+import { reportEnvironment } from './utils/envCheck.js';
+
+reportEnvironment();
 
 const app = createApp();
 
@@ -30,6 +34,7 @@ const server = app.listen(env.port, () => {
 
 // Reminder scheduler (tick every 60s; safe when the DB is not connected yet).
 startScheduler();
+startCallSweeper(); // Connect calls: stop ringing after 45 s, clean up calls whose browser vanished
 
 // Meetings: durable background jobs (recording assembly, transcription, AI summary/minutes).
 registerMeetingJobs();
@@ -39,6 +44,7 @@ startJobRunner();
 async function shutdown(signal) {
   console.log(`[lifeos-api] ${signal} received — shutting down`);
   stopScheduler();
+  stopCallSweeper();
   stopJobRunner();
   server.close(async () => {
     try {
@@ -51,6 +57,9 @@ async function shutdown(signal) {
   // Force-exit if connections refuse to close.
   setTimeout(() => process.exit(1), 10_000).unref();
 }
+
+// Never let an async error disappear silently (a swallowed rejection is how background work used to "just not happen").
+process.on('unhandledRejection', (reason) => console.error(`[process] unhandled promise rejection: ${reason?.message || reason}`));
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));

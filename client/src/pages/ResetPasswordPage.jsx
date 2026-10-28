@@ -58,6 +58,7 @@ export default function ResetPasswordPage() {
         <Input
           label="New Password"
           type="password"
+          autoComplete="new-password"
           placeholder="••••••••"
           {...register('password')}
           error={errors.password?.message}
@@ -65,6 +66,7 @@ export default function ResetPasswordPage() {
         <Input
           label="Confirm Password"
           type="password"
+          autoComplete="new-password"
           placeholder="••••••••"
           {...register('confirmPassword')}
           error={errors.confirmPassword?.message}

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Bell } from 'lucide-react';
+import { Bell, Video } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext.jsx';
-import { getModuleMeta } from '../utils/notificationMeta.js';
+import { getModuleMeta, notificationAction } from '../utils/notificationMeta.js';
 import { formatTime } from '../utils/format.js';
 
 /**
@@ -11,7 +11,7 @@ import { formatTime } from '../utils/format.js';
  * - Auto-dismisses after a few seconds (managed by the provider).
  */
 export default function NotificationToasts() {
-  const { toasts, openNotification, dismissToast } = useNotification();
+  const { toasts, openNotification, dismissToast, runNotificationAction } = useNotification();
 
   if (!toasts.length) return null;
 
@@ -47,6 +47,19 @@ export default function NotificationToasts() {
               <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed line-clamp-2">
                 {toast.message}
               </span>
+              {notificationAction(toast) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          runNotificationAction(toast);
+                        }}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 min-h-[36px] text-xs font-bold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                      >
+                        <Video className="w-3.5 h-3.5" aria-hidden="true" />
+                        {notificationAction(toast).label}
+                      </button>
+                    )}
             </span>
             <button
               onClick={(e) => {

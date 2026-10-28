@@ -1,26 +1,28 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bell, CheckCheck, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { Bell, CheckCheck, ChevronLeft, ChevronRight, Trash2, Video } from 'lucide-react';
 import api from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useNotification } from '../context/NotificationContext.jsx';
-import { getModuleMeta } from '../utils/notificationMeta.js';
+import { getModuleMeta, notificationAction } from '../utils/notificationMeta.js';
 import { formatDate } from '../utils/format.js';
-import { Button, Card, Spinner, EmptyState } from '../components/ui.jsx';
+import { Button, Card, EmptyState, ErrorState, SkeletonList, PageHeader, IconButton } from '../components/ui.jsx';
 
 const PAGE_SIZE = 12;
 
 export default function NotificationsPage() {
   const { addToast } = useToast();
-  const { markAllRead: contextMarkAllRead } = useNotification();
+  const { markAllRead: contextMarkAllRead, runNotificationAction } = useNotification();
 
   const [tab, setTab] = useState('all'); // 'all' | 'unread'
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async (pageNo, onlyUnread) => {
     setLoading(true);
+    setFailed(false);
     try {
       const params = { page: pageNo, limit: PAGE_SIZE };
       if (onlyUnread) params.isRead = 'false';
@@ -29,8 +31,9 @@ export default function NotificationsPage() {
         setItems(res.data.items || []);
         setTotal(res.data.total || 0);
       }
-    } catch {
-      /* ignore */
+    } catch (e) {
+      console.error('Notifications failed to load', e);
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -62,82 +65,81 @@ export default function NotificationsPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500 pb-10">
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold dark:text-white truncate">Notifications</h1>
-          <p className="text-sm text-slate-500 font-medium truncate">
-            {tab === 'unread' ? 'Unread notifications' : 'Stay updated on your digital life'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-sm">
-            {[
-              { id: 'all', label: 'All' },
-              { id: 'unread', label: 'Unread' },
-            ].map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`px-4 py-1.5 rounded-lg font-semibold transition-colors ${tab === t.id ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500'}`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-          <Button variant="secondary" size="sm" icon={CheckCheck} onClick={markAllRead} className="flex-shrink-0">
-            Mark all read
-          </Button>
-        </div>
-      </header>
+    <div className="max-w-4xl mx-auto space-y-6 pb-10">
+      <PageHeader
+        title="Notifications"
+        description={tab === 'unread' ? 'Unread notifications' : 'Stay updated on your digital life'}
+        actions={
+          <>
+            <div className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-sm" role="tablist" aria-label="Filter notifications">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'unread', label: 'Unread' },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  role="tab"
+                  aria-selected={tab === t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`min-h-9 px-4 rounded-lg font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${tab === t.id ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500'}`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <Button variant="secondary" size="sm" icon={CheckCheck} onClick={markAllRead} className="flex-shrink-0">
+              Mark all read
+            </Button>
+          </>
+        }
+      />
 
       <div className="space-y-3">
-        {loading ? (
-          <div className="py-20 flex justify-center">
-            <Spinner size="lg" />
-          </div>
+        {loading && items.length === 0 ? (
+          <SkeletonList rows={5} />
+        ) : failed && items.length === 0 ? (
+          <Card><ErrorState title="Notifications couldn't load" onRetry={() => load(page, tab === 'unread')} /></Card>
         ) : items.length > 0 ? (
           <>
             {items.map((n) => {
               const meta = getModuleMeta(n.module || n.type);
               const Icon = meta.icon || Bell;
               return (
-                <Card key={n._id} className={`p-4 transition-all hover:border-indigo-200 dark:hover:border-indigo-900 group ${!n.isRead ? 'border-l-4 border-l-indigo-500' : ''}`}>
+                <Card key={n._id} className={`p-4 transition-colors hover:border-indigo-200 dark:hover:border-indigo-900 ${!n.isRead ? 'border-l-4 border-l-indigo-500' : ''}`}>
                   <div className="flex gap-3 sm:gap-4">
                     <span className={`mt-0.5 w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${meta.bg}`}>
                       <Icon className={`w-4.5 h-4.5 ${meta.color}`} />
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start gap-2">
-                        <h4 className={`text-sm mb-1 truncate ${n.isRead ? 'font-semibold text-slate-600 dark:text-slate-400' : 'font-bold text-slate-900 dark:text-white'}`}>
+                        <h2 className={`text-sm mb-1 truncate ${n.isRead ? 'font-semibold text-slate-600 dark:text-slate-400' : 'font-bold text-slate-900 dark:text-white'}`}>
                           {n.title}
-                        </h4>
-                        {!n.isRead && <span className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0 mt-1" />}
+                        </h2>
+                        {!n.isRead && <span className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0 mt-1" role="img" aria-label="Unread" />}
                       </div>
                       {n.message && (
                         <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300 line-clamp-2">{n.message}</p>
                       )}
+                      {notificationAction(n) && (
+                        <button type="button" onClick={() => runNotificationAction(n)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 min-h-[44px] text-sm font-bold text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
+                          <Video className="w-4 h-4" aria-hidden="true" /> {notificationAction(n).label}
+                        </button>
+                      )}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
                           {formatDate(n.createdAt, 'MMMM d, yyyy · h:mm a')}
                         </span>
                         {!n.isRead && (
                           <button
                             onClick={() => markRead(n._id)}
-                            className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline"
+                            className="inline-flex items-center min-h-9 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 rounded"
                           >
                             Mark as read
                           </button>
                         )}
                       </div>
                     </div>
-                    <button
-                      onClick={() => removeOne(n._id)}
-                      className="self-start p-2 text-slate-300 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex-shrink-0"
-                      aria-label="Delete notification"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <IconButton icon={Trash2} tone="danger" label="Delete notification" className="self-start flex-shrink-0 -mr-1 -mt-1" onClick={() => removeOne(n._id)} />
                   </div>
                 </Card>
               );

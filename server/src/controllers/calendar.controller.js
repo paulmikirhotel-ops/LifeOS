@@ -6,6 +6,11 @@ export async function listEvents(req, res) {
   res.json({ success: true, data: { items: data } });
 }
 
+export async function listTasksDue(req, res) {
+  const data = await CalendarService.tasksDue(req.user, req.query);
+  res.json({ success: true, data: { items: data } });
+}
+
 export async function createEvent(req, res) {
   const data = await CalendarService.create(req.user, req.body);
   res.status(201).json({ success: true, data });

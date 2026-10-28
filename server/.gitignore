@@ -1,3 +1,4 @@
 
 # ── Local dev recording storage (Meetings) ──────────────────
 storage-dev/
+.env

@@ -1,6 +1,7 @@
 import { DailyNote } from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
 import { hasPermission } from '../config/permissions.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 
 export async function list(user, query) {
   const { tenantId, id: userId, permissions } = user;
@@ -20,9 +21,10 @@ export async function list(user, query) {
 
   if (tag) filter.tags = tag;
   if (search) {
+    const searchRx = escapeRegex(String(search).slice(0, 100));
     filter.$or = [
-      { title: { $regex: search, $options: 'i' } },
-      { content: { $regex: search, $options: 'i' } },
+      { title: { $regex: searchRx, $options: 'i' } },
+      { content: { $regex: searchRx, $options: 'i' } },
     ];
   }
 

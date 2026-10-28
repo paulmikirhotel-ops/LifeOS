@@ -20,7 +20,7 @@ export function UpcomingMeetingCard({ meeting, now }) {
     <Card className="p-4 sm:p-5 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link to={`/meetings/${meeting.id}`} className="block font-bold text-slate-900 dark:text-white truncate hover:text-indigo-600">
+          <Link to={`/meetings/${meeting.id}`} className="block py-1 font-bold text-slate-900 dark:text-white truncate hover:text-indigo-600">
             {meeting.title}
           </Link>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
@@ -72,7 +72,7 @@ export function RecentMeetingCard({ meeting }) {
     <Card className="p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link to={`/meetings/${meeting.id}`} className="block font-bold text-slate-900 dark:text-white truncate hover:text-indigo-600">{meeting.title}</Link>
+          <Link to={`/meetings/${meeting.id}`} className="block py-1 font-bold text-slate-900 dark:text-white truncate hover:text-indigo-600">{meeting.title}</Link>
           <p className="mt-1 text-xs text-slate-500">{rangeLabel(meeting)} · {formatDuration(meeting.durationSec)}</p>
         </div>
         <StatusBadge meeting={meeting} now={Date.now()} />
@@ -87,13 +87,13 @@ export function RecentMeetingCard({ meeting }) {
           <Chip ok={Boolean(meeting.hasMinutes)} icon={ListChecks} label="Minutes" />
         </div>
       )}
-      <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-        <Link className="text-indigo-600 hover:underline" to={`/meetings/${meeting.id}`}>View</Link>
-        {meeting.hasTranscript && <Link className="text-indigo-600 hover:underline" to={tab('transcript')}>Transcript</Link>}
-        {meeting.hasSummary && <Link className="text-indigo-600 hover:underline" to={tab('summary')}>Summary</Link>}
-        {meeting.hasMinutes && <Link className="text-indigo-600 hover:underline" to={tab('minutes')}>Minutes</Link>}
-        {hasRec && <Link className="text-indigo-600 hover:underline" to={tab('recording')}>Recording</Link>}
-        <Link className="text-indigo-600 hover:underline" to={`/meetings/${meeting.id}?export=1`}>Download</Link>
+      <div className="mt-2 -mb-2 flex flex-wrap gap-x-4 text-xs font-semibold">
+        <Link className="inline-flex items-center min-h-10 text-indigo-600 dark:text-indigo-400 hover:underline" to={`/meetings/${meeting.id}`}>View</Link>
+        {meeting.hasTranscript && <Link className="inline-flex items-center min-h-10 text-indigo-600 dark:text-indigo-400 hover:underline" to={tab('transcript')}>Transcript</Link>}
+        {meeting.hasSummary && <Link className="inline-flex items-center min-h-10 text-indigo-600 dark:text-indigo-400 hover:underline" to={tab('summary')}>Summary</Link>}
+        {meeting.hasMinutes && <Link className="inline-flex items-center min-h-10 text-indigo-600 dark:text-indigo-400 hover:underline" to={tab('minutes')}>Minutes</Link>}
+        {hasRec && <Link className="inline-flex items-center min-h-10 text-indigo-600 dark:text-indigo-400 hover:underline" to={tab('recording')}>Recording</Link>}
+        <Link className="inline-flex items-center min-h-10 text-indigo-600 dark:text-indigo-400 hover:underline" to={`/meetings/${meeting.id}?export=1`}>Download</Link>
       </div>
     </Card>
   );

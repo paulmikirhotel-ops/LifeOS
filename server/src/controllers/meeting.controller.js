@@ -1,4 +1,7 @@
 import * as meetingService from '../services/meeting.service.js';
+import * as inviteService from '../services/meetingInvite.service.js';
+import * as roomService from '../services/meetingRoom.service.js';
+import * as minutesService from '../services/meetingMinutes.service.js';
 import { assertObjectId } from '../utils/objectId.js';
 import { ApiError } from '../utils/ApiError.js';
 
@@ -36,6 +39,25 @@ export async function uploadChunk(req, res) {
   const r = await meetingService.uploadChunk(req.user, id(req), parseInt(req.params.index, 10), req.body, req.headers['content-type'] || '');
   ok(res, r, 201);
 }
+export async function claimRecording(req, res) {
+  ok(res, await meetingService.claimRecording(req.user, id(req)));
+}
+export const chatList = async (req, res) => ok(res, await meetingService.chatList(req.user, id(req), req.query.after));
+export const chatSend = async (req, res) => ok(res, await meetingService.chatSend(req.user, id(req), req.body.text), 201);
+export async function inviteChatList(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.chatListViaLink(req.params.token, req.get('x-meeting-pass'), req.query.after));
+}
+export async function inviteChatSend(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.chatSendViaLink(req.params.token, req.get('x-meeting-pass'), req.body.text), 201);
+}
+export async function recordingBeat(req, res) {
+  ok(res, await meetingService.recordingBeat(req.user, id(req), req.body || {}));
+}
+export async function releaseRecording(req, res) {
+  ok(res, await meetingService.releaseRecording(req.user, id(req)));
+}
 export async function transcribeChunk(req, res) {
   const r = await meetingService.transcribeChunk(req.user, id(req), req.body, req.headers['content-type'] || '', req.query.offsetMs || 0);
   ok(res, r);
@@ -65,6 +87,7 @@ export async function recordingStream(req, res) {
 // ── AI processing ───────────────────────────────────────────────────────
 export const retry = async (req, res) => ok(res, await meetingService.retry(req.user, id(req), req.body.stage), 202);
 export const generateSummary = async (req, res) => ok(res, await meetingService.retry(req.user, id(req), 'analyze'), 202);
+export const sendMinutes = async (req, res) => ok(res, await meetingService.sendMinutes(req.user, id(req), req.body?.emails));
 export const generateMinutes = async (req, res) => ok(res, await meetingService.retry(req.user, id(req), 'minutes'), 202);
 export const getSummary = async (req, res) => ok(res, await meetingService.getSummary(req.user, id(req)));
 export const getMinutes = async (req, res) => ok(res, await meetingService.getMinutes(req.user, id(req)));
@@ -108,4 +131,79 @@ export const revokeShare = async (req, res) => ok(res, await meetingService.revo
 export async function publicMeeting(req, res) {
   res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer' });
   ok(res, await meetingService.getSharedMeeting(req.params.token));
+}
+
+// ── invitation link (organizer) ─────────────────────────────────────────
+const noStore = (res) => res.set({ 'Cache-Control': 'no-store' });
+export async function getInvite(req, res) {
+  noStore(res);
+  ok(res, await inviteService.getInvite(req.user, id(req)));
+}
+export async function updateInvite(req, res) {
+  noStore(res);
+  ok(res, await inviteService.updateInvite(req.user, id(req), req.body));
+}
+export async function regenerateInvite(req, res) {
+  noStore(res);
+  ok(res, await inviteService.regenerateInvite(req.user, id(req)));
+}
+export const inviteParticipants = async (req, res) => ok(res, await inviteService.listInviteParticipants(req.user, id(req)));
+
+// ── video room (workspace members) ──────────────────────────────────────
+export async function roomJoin(req, res) {
+  noStore(res);
+  ok(res, await roomService.joinRoomAsMember(req.user, id(req)));
+}
+export const roomPing = async (req, res) => ok(res, await roomService.pingRoomAsMember(req.user, id(req)));
+export const roomLeave = async (req, res) => ok(res, await roomService.leaveRoomAsMember(req.user, id(req)));
+
+// ── invitation link (public: anyone holding the link) ───────────────────
+const publicHeaders = (res) => res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer' });
+export async function inviteInfo(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.getInvitation(req.params.token, req.user));
+}
+export async function inviteJoin(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.joinViaLink(req.params.token, req.body || {}, req.user));
+}
+export async function inviteRecordingClaim(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.claimRecordingViaLink(req.params.token, req.get('x-meeting-pass')));
+}
+export async function inviteRecordingRelease(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.releaseRecordingViaLink(req.params.token, req.get('x-meeting-pass')));
+}
+export async function inviteRecordingBeat(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.recordingBeatViaLink(req.params.token, req.get('x-meeting-pass'), req.body || {}));
+}
+export async function inviteRecordingChunk(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.uploadChunkViaLink(req.params.token, req.get('x-meeting-pass'), parseInt(req.params.index, 10), req.body, req.headers['content-type'] || ''), 201);
+}
+export async function inviteRoomJoin(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.joinRoomViaLink(req.params.token, req.get('x-meeting-pass')));
+}
+export async function inviteRoomPing(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.pingRoomViaLink(req.params.token, req.get('x-meeting-pass')));
+}
+export async function inviteRoomLeave(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.leaveRoomViaLink(req.params.token, req.get('x-meeting-pass')));
+}
+export async function inviteMinutes(req, res) {
+  publicHeaders(res);
+  ok(res, await minutesService.getMinutesViaPass(req.params.token, req.get('x-meeting-pass')));
+}
+export async function minutesByKey(req, res) {
+  publicHeaders(res);
+  ok(res, await minutesService.getMinutesViaKey(req.params.key));
+}
+export async function inviteSession(req, res) {
+  publicHeaders(res);
+  ok(res, await inviteService.getSession(req.params.token, req.get('x-meeting-pass')));
 }

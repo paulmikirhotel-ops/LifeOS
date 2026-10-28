@@ -1,4 +1,4 @@
-import { CalendarEvent } from '../models/index.js';
+import { CalendarEvent, Task } from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
 
 /** Tenant-shared calendar events (daily/weekly/monthly views in the UI). */
@@ -12,6 +12,25 @@ export const CalendarService = {
     }
     const items = await CalendarEvent.find(filter).sort({ startAt: 1 }).lean();
     return items.map((e) => ({ ...e, id: e._id.toString() }));
+  },
+
+  /** Open tasks with a due date in the range (widened by a day each side; the client buckets by local day). */
+  async tasksDue(user, { from, to }) {
+    if (!from || !to) return [];
+    const start = new Date(`${from}T00:00:00.000Z`);
+    const end = new Date(`${to}T23:59:59.999Z`);
+    start.setUTCDate(start.getUTCDate() - 1);
+    end.setUTCDate(end.getUTCDate() + 1);
+    const items = await Task.find({
+      tenantId: user.tenantId,
+      status: { $nin: ['completed', 'cancelled'] },
+      dueDate: { $gte: start, $lte: end },
+    })
+      .select('title priority status dueDate category')
+      .sort({ dueDate: 1 })
+      .limit(500)
+      .lean();
+    return items.map((t) => ({ ...t, id: t._id.toString() }));
   },
 
   async create(user, body) {

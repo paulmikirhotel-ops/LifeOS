@@ -51,7 +51,7 @@ export default function AskMeeting({ meetingId, aiReady, onCitation }) {
             <p className="text-xs text-slate-500">Answers use only this meeting’s transcript and notes.</p>
             <div className="flex flex-wrap gap-2">
               {SUGGESTIONS.map((s) => (
-                <button key={s} type="button" disabled={!aiReady} onClick={() => ask(s)} className="rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50">
+                <button key={s} type="button" disabled={!aiReady} onClick={() => ask(s)} className="rounded-full border border-slate-200 dark:border-slate-700 px-3 min-h-10 sm:min-h-9 text-xs text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50">
                   {s}
                 </button>
               ))}

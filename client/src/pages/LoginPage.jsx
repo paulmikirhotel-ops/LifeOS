@@ -53,19 +53,22 @@ export default function LoginPage() {
         <Input
           label="Email Address"
           type="email"
+          autoComplete="email"
           placeholder="name@example.com"
           {...register('email')}
           error={errors.email?.message}
         />
         <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
-            <Link to="/forgot-password" size="sm" className="text-xs text-indigo-600 hover:text-indigo-500 font-medium">
+            <label htmlFor="login-password" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
+            <Link to="/forgot-password" className="inline-flex items-center min-h-10 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">
               Forgot password?
             </Link>
           </div>
           <Input
+            id="login-password"
             type="password"
+            autoComplete="current-password"
             placeholder="••••••••"
             {...register('password')}
             error={errors.password?.message}
@@ -79,7 +82,7 @@ export default function LoginPage() {
 
       <p className="text-center text-sm text-slate-500">
         Don't have an account?{' '}
-        <Link to="/register" className="text-indigo-600 hover:text-indigo-500 font-semibold transition-colors">
+        <Link to="/register" className="inline-flex items-center min-h-10 text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-semibold transition-colors">
           Create an account
         </Link>
       </p>

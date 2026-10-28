@@ -1,86 +1,82 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
+import { env } from '../config/env.js';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import * as meetingController from '../controllers/meeting.controller.js';
-import * as inviteController from '../controllers/meetingInvite.controller.js';
-import { optionalAuth } from '../middleware/optionalAuth.js';
+import { optionalAuthenticate } from '../middleware/optionalAuthenticate.js';
 import { validateRequest } from '../middleware/validateRequest.js';
+import { INVITE_PASSWORD_MAX } from '../utils/invite.js';
 
 /**
- * Public, unauthenticated surface for meeting links.
+ * Public, unauthenticated endpoints.
  *
- * Two different things live here and they are deliberately separate:
+ *  /public/meetings/:token   read-only view of a COMPLETED meeting the organizer explicitly shared
+ *  /public/meet/:token/...   join flow for a meeting invitation link (password protected)
  *
- *   1. `/meetings/:token` — the POST-MEETING read-only share (summary, minutes,
- *      action items). The token is 192 bits of randomness, only its hash is
- *      stored, it expires, it can be revoked, and audio is NEVER exposed.
- *
- *   2. `/invite/:code/...` — the PRE-MEETING invitation link (`/meet/<code>`).
- *      Its access rules are per meeting (public / authenticated / restricted,
- *      guests, approval). It exists so an organizer can drop one link into a
- *      WhatsApp group instead of typing every participant in.
- *
- * `optionalAuth` is used instead of `authenticate` so a signed-in visitor is
- * recognised (and can join as themselves) while a signed-out visitor is not
- * bounced to a login wall before they can even see the invitation.
+ * Tokens are 192–256 bits of randomness, only hashes are stored, and each can be revoked/regenerated.
+ * Audio is never exposed here.
  */
 const router = Router();
 
-/** Link views are cheap but enumerable, so they get a real ceiling. */
-const viewLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 120,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many requests, please try again later', code: 'RATE_LIMITED' },
+const limited = (limit, message) =>
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { success: false, message, code: 'RATE_LIMITED' },
+  });
+
+const limiter = limited(60, 'Too many requests, please try again later');
+const inviteViewLimiter = limited(120, 'Too many requests, please try again later');
+// Password attempts are the sensitive call: tight per-IP ceiling here, plus a per-meeting lockout in the service.
+const joinLimiter = limited(20, 'Too many attempts, please try again in a few minutes');
+
+const joinSchema = z.object({
+  password: z.string().max(INVITE_PASSWORD_MAX).optional(),
+  name: z.string().max(120).optional(),
+  email: z.string().max(254).optional(),
 });
 
-/** Joins write a roster row, so they are capped much harder than views. */
-const joinLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 30,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many join attempts, please try again shortly', code: 'RATE_LIMITED' },
-});
+router.get('/meetings/:token', limiter, meetingController.publicMeeting);
 
-const codeParam = z.object({
-  // 72 bits of base64url; the bound keeps junk from reaching the database.
-  code: z.string().min(8).max(40).regex(/^[A-Za-z0-9_-]+$/, 'Invalid link'),
-});
+router.get('/meet/:token', inviteViewLimiter, optionalAuthenticate, meetingController.inviteInfo);
+router.get('/meet/:token/minutes', inviteViewLimiter, meetingController.inviteMinutes);
+// Personal key from the "minutes ready" e-mail (works after the meeting, no pass or login needed).
+router.get('/minutes/:key', inviteViewLimiter, meetingController.minutesByKey);
+router.get('/meet/:token/session', inviteViewLimiter, meetingController.inviteSession);
 
-const joinBody = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
-  email: z.string().trim().email().max(254).optional(),
-  requestOnly: z.boolean().optional(),
-  // Accepted in the body as well as the header so the page can join with a plain
-  // form post and no custom headers (e.g. from a restricted webview).
-  guestKey: z.string().min(16).max(200).optional(),
-});
-
-// ── post-meeting share token (existing behaviour, unchanged) ────────────
-router.get('/meetings/:token', viewLimiter, meetingController.publicMeeting);
-
-// ── pre-meeting invitation link ─────────────────────────────────────────
-router.get('/invite/:code', viewLimiter, optionalAuth, validateRequest(codeParam, 'params'), inviteController.invitation);
-router.post(
-  '/invite/:code/join',
-  joinLimiter,
-  optionalAuth,
-  validateRequest(codeParam, 'params'),
-  validateRequest(joinBody),
-  inviteController.join
-);
-router.post(
-  '/invite/:code/calendar',
-  joinLimiter,
-  optionalAuth,
-  validateRequest(codeParam, 'params'),
-  inviteController.addToCalendar
-);
-// Responding (accept / decline) is intentionally NOT a public route. To record a
-// response we must know WHO is responding, and the only trustworthy identity on a
-// public URL is an authenticated session — so that lives on the authenticated
-// router as POST /meetings/:id/respond and is driven by the in-app Invitations view.
+// Video room for link joiners. Authorised by the meeting pass (X-Meeting-Pass header), never by the URL.
+// Limits are keyed per pass, not per IP, so a whole office or mobile carrier sharing one IP is not throttled together.
+const perPass = (limit, windowMs, message) =>
+  rateLimit({
+    windowMs,
+    limit,
+    keyGenerator: (req) => `p:${String(req.get('x-meeting-pass') || 'none').slice(-40)}`,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    validate: { keyGeneratorIpFallback: false },
+    message: { success: false, message, code: 'RATE_LIMITED' },
+  });
+const roomJoinLimiter = perPass(30, 15 * 60 * 1000, 'Too many join attempts, please try again in a few minutes');
+// The room pings every ~20 s and a recorder also sends a heartbeat: generous per-pass ceilings, still bounded.
+const roomPingLimiter = perPass(200, 15 * 60 * 1000, 'Too many room updates');
+const recordingLimiter = perPass(120, 15 * 60 * 1000, 'Too many recording requests');
+const chunkLimiter = perPass(500, 15 * 60 * 1000, 'Uploading audio too quickly');
+const rawAudio = express.raw({ type: () => true, limit: env.meetings.chunkMaxBytes });
+const chatLimiter = perPass(900, 15 * 60 * 1000, 'Chat is going too fast');
+const chatBody = z.object({ text: z.string().max(4000) });
+const beatBody = z.object({ paused: z.boolean().optional() });
+const chunkParams = z.object({ token: z.string().max(80), index: z.coerce.number().int().min(0).max(99999) });
+router.post('/meet/:token/room', roomJoinLimiter, meetingController.inviteRoomJoin);
+router.post('/meet/:token/room/ping', roomPingLimiter, meetingController.inviteRoomPing);
+router.post('/meet/:token/recording/claim', recordingLimiter, meetingController.inviteRecordingClaim);
+router.post('/meet/:token/recording/release', recordingLimiter, meetingController.inviteRecordingRelease);
+router.post('/meet/:token/recording/beat', chunkLimiter, validateRequest(beatBody), meetingController.inviteRecordingBeat);
+router.put('/meet/:token/recording/chunks/:index', chunkLimiter, validateRequest(chunkParams, 'params'), rawAudio, meetingController.inviteRecordingChunk);
+router.get('/meet/:token/chat', chatLimiter, meetingController.inviteChatList);
+router.post('/meet/:token/chat', chatLimiter, validateRequest(chatBody), meetingController.inviteChatSend);
+router.post('/meet/:token/room/leave', roomJoinLimiter, meetingController.inviteRoomLeave);
+router.post('/meet/:token/join', joinLimiter, optionalAuthenticate, validateRequest(joinSchema), meetingController.inviteJoin);
 
 export default router;

@@ -56,3 +56,8 @@ export async function deleteAccount(req, res) {
   clearAuthCookies(res);
   res.json({ success: true, data: { message: 'Account deleted' } });
 }
+
+export async function resendVerification(req, res) {
+  const data = await authService.resendVerification(req.user.id);
+  res.json({ success: true, data });
+}

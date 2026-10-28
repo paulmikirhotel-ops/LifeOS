@@ -5,6 +5,7 @@ import { meetingsApi } from '../../api/meetings.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatApiError } from '../../utils/errors.js';
 import { format } from 'date-fns';
+import { publicOrigin } from '../../utils/publicUrl.js';
 
 /** Explicit, expiring, revocable, read-only sharing. Audio is never included. */
 export default function ShareDialog({ meetingId, open, onClose }) {
@@ -25,7 +26,7 @@ export default function ShareDialog({ meetingId, open, onClose }) {
     setBusy(true);
     try {
       const r = await meetingsApi.createShare(meetingId, { expiresInDays: parseInt(days, 10), includeTranscript: withTranscript });
-      setLink(`${window.location.origin}/shared/${r.data.token}`);
+      setLink(`${publicOrigin()}/shared/${r.data.token}`);
       setStatus({ active: true, expiresAt: r.data.expiresAt, includeTranscript: withTranscript });
     } catch (err) {
       addToast(formatApiError(err), 'error');

@@ -4,6 +4,11 @@ import { env, redactMongoUri } from './env.js';
 const MONGOOSE_OPTIONS = {
   serverSelectionTimeoutMS: 5000,
   maxPoolSize: 10,
+  // Atlas / routers silently drop idle TCP connections; the next query on that socket then fails with
+  // "read ECONNRESET". Closing idle sockets ourselves first (and probing more often) avoids most of them.
+  maxIdleTimeMS: 60_000,
+  heartbeatFrequencyMS: 10_000,
+  socketTimeoutMS: 120_000,
 };
 
 function attachConnectionListeners() {

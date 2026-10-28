@@ -135,7 +135,7 @@ export default function LiveMeetingPage() {
       {rec.netIssue && <p role="alert" className="flex items-start gap-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-300"><WifiOff className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />{MESSAGES.network} {rec.pending > 0 && `(${rec.pending} piece${rec.pending === 1 ? '' : 's'} waiting)`}</p>}
       {rec.error && <p role="alert" className="flex items-start gap-2 rounded-xl bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300"><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />{rec.error}</p>}
 
-      <div className="grid gap-4 lg:grid-cols-[22rem_1fr] items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[22rem_minmax(0,1fr)] items-start">
         {/* Controls: a compact fixed bar on phones, a sticky card on desktop */}
         <div className="fixed inset-x-0 bottom-14 z-30 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] lg:static lg:z-auto lg:border lg:rounded-2xl lg:p-5 lg:sticky lg:top-4">
           {!isLive ? (

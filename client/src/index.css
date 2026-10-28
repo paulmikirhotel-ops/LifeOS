@@ -83,3 +83,59 @@ body {
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* ── LifeOS logo watermark (see components/Watermark.jsx) ───────────────────────────────────────────
+   Fixed, non-interactive, always behind the page. Very low opacity so text, forms, video and controls
+   stay fully readable. The host layout must create a stacking context (class "relative isolate"). */
+.lifeos-watermark {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  user-select: none;
+  background-image: url('/logo-watermark.png');
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: min(72vw, 640px);
+  opacity: 0.07;
+}
+.dark .lifeos-watermark {
+  opacity: 0.1;
+}
+.lifeos-watermark--room {
+  opacity: 0.075;
+  background-size: min(62vw, 480px);
+}
+/* Tablet / laptop with a sidebar: keep the mark centred in the content area. */
+@media (min-width: 768px) {
+  .lifeos-watermark {
+    background-position: calc(50% + var(--wm-shift, 0px)) center;
+  }
+}
+/* Phones, portrait: bigger relative to the screen, slightly above centre (clear of the bottom nav / controls). */
+@media (max-width: 640px) {
+  .lifeos-watermark {
+    background-size: min(90vw, 380px);
+    background-position: center 44%;
+  }
+  .lifeos-watermark--room {
+    background-size: min(78vw, 320px);
+  }
+}
+/* Phones, landscape: height is the scarce dimension. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .lifeos-watermark,
+  .lifeos-watermark--room {
+    background-size: auto min(78vh, 300px);
+    background-position: center;
+  }
+}
+@media print, (forced-colors: active) {
+  .lifeos-watermark {
+    display: none;
+  }
+}
+
+/* Hide the scrollbar on horizontally scrolling chip/tab rows (still scrollable by touch, wheel and keyboard). */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

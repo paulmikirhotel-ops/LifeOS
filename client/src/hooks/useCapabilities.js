@@ -36,5 +36,6 @@ export function useCapabilities() {
     recording: Boolean(caps?.storage),
     transcription: Boolean(caps?.speechToText),
     ai: Boolean(caps?.ai),
+    video: Boolean(caps?.video),
   };
 }

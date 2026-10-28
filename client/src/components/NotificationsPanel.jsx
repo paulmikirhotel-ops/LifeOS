@@ -1,9 +1,22 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { Bell, CheckCheck, X, BellOff } from 'lucide-react';
+import { Bell, CheckCheck, X, BellOff, Video } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext.jsx';
-import { getModuleMeta } from '../utils/notificationMeta.js';
+import { getModuleMeta, notificationAction } from '../utils/notificationMeta.js';
 import { formatDate } from '../utils/format.js';
+
+function useIsPhone() {
+  const query = '(max-width: 639px)';
+  const [match, setMatch] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = (e) => setMatch(e.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return match;
+}
 
 function timeAgo(iso) {
   if (!iso) return '';
@@ -25,11 +38,13 @@ function timeAgo(iso) {
  * mobile. Unread items are visually distinct; clicking marks read + navigates.
  */
 export default function NotificationsPanel() {
-  const { panelOpen, setPanelOpen, items, unread, markRead, markAllRead, openNotification } = useNotification();
+  const { panelOpen, setPanelOpen, items, unread, markRead, markAllRead, openNotification, runNotificationAction } = useNotification();
+
+  const isPhone = useIsPhone();
 
   if (!panelOpen) return null;
 
-  return (
+  const content = (
     <div className="fixed inset-0 z-50 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2">
       {/* Backdrop (full-screen click-away on every breakpoint) */}
       <div className="fixed inset-0 bg-slate-900/40 sm:bg-transparent" onClick={() => setPanelOpen(false)} />
@@ -109,6 +124,19 @@ export default function NotificationsPanel() {
                     <span className="block text-[10px] text-slate-400 dark:text-slate-500 mt-1 font-medium">
                       {timeAgo(n.createdAt)}
                     </span>
+                    {notificationAction(n) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          runNotificationAction(n);
+                        }}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 min-h-[36px] text-xs font-bold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                      >
+                        <Video className="w-3.5 h-3.5" aria-hidden="true" />
+                        {notificationAction(n).label}
+                      </button>
+                    )}
                   </span>
                   {!n.isRead && (
                     <button
@@ -140,4 +168,8 @@ export default function NotificationsPanel() {
       </div>
     </div>
   );
+
+  // On phones the panel is a full-screen bottom sheet. The app header uses backdrop-blur, which makes it the
+  // containing block for `position: fixed` children — rendered inside it the sheet ends up off-screen. Portal it out.
+  return isPhone ? createPortal(content, document.body) : content;
 }

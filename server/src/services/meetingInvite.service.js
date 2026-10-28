@@ -1,872 +1,507 @@
 import crypto from 'node:crypto';
-import { Meeting, MeetingAttendance, Membership, User, CalendarEvent } from '../models/index.js';
-import { env } from '../config/env.js';
+import { Meeting, MeetingParticipant, Membership, User } from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
-import { hashToken } from '../utils/token.js';
-import { assertObjectId } from '../utils/objectId.js';
-import * as notificationService from './notification.service.js';
 import { AuditService } from './audit.service.js';
+import { loadForManage, claimRecordingFor, releaseRecordingFor, recordingBeatFor, storeChunk } from './meeting.service.js';
+import { assertRoomOpen, buildRoomPayload, ensureVideo, markJoined, recordingSnapshot, usesNativeRoom } from './meetingRoom.service.js';
+import { cleanEmail } from '../utils/minutesAccess.js';
+import * as chat from './meetingChat.service.js';
+import { mintMeetingRoomToken } from '../utils/livekit.js';
+import {
+  INVITE_TOKEN_RE,
+  buildInviteFields,
+  checkInvitePassword,
+  deriveInviteToken,
+  generateInvitePassword,
+  hashInvitePassword,
+  hashInviteToken,
+  invitePath,
+  signMeetingPass,
+  verifyMeetingPass,
+} from '../utils/invite.js';
 
 /**
- * Shareable meeting invitation links.
+ * Meeting invitation link — organizer controls + the public join flow.
  *
- * ── The link ────────────────────────────────────────────────────────────────
- *   https://<app>/meet/<code>
- *
- * `code` is 72 bits of CSPRNG output in base64url (12 chars). It is NOT the
- * Mongo _id, because requirement 22 forbids predictable ids in a public URL.
- * Regenerating the code invalidates every previously distributed link.
- *
- * ── Access rules ────────────────────────────────────────────────────────────
- * Three modes, chosen by the organizer (`meeting.access.mode`):
- *   public        anyone with the link
- *   authenticated must be signed in to LifeOS
- *   restricted    only people the organizer invited (or approved)
- * …combined with two switches: `allowGuests` (join without an account) and
- * `requireApproval` (land in a pending state instead of joining).
- *
- * Every visitor gets an explicit `action` telling the UI exactly what to show —
- * the client never has to re-implement (and mis-implement) these rules.
- *
- * ── Privacy ─────────────────────────────────────────────────────────────────
- * The public payload deliberately omits the meeting's internal id, the recording,
- * the transcript and the participant list unless the organizer enabled it. The
- * internal id is only revealed AFTER a successful join.
+ * Security model (see utils/invite.js for token details):
+ *  - A visitor with ONLY the link sees a minimal card (title, organizer, time, status, headcount).
+ *  - Agenda, description and the meeting location/URL are released only after the password
+ *    (organizer signed in = no password needed) and the access-mode rules pass.
+ *  - Wrong passwords are counted per meeting; 8 misses lock the link for 15 minutes (on top of the
+ *    per-IP rate limits on the routes), so distributed guessing does not work either.
+ *  - Joining creates a MeetingParticipant row only. It never grants workspace access.
+ *  - Invalid, disabled and regenerated links all answer generically; nothing is leaked about
+ *    private participants.
  */
 
-const DEFAULT_LINK_TTL_DAYS = 180;
+const MAX_FAILED_ATTEMPTS = 8;
+const LOCK_MS = 15 * 60 * 1000;
+const ROOM_STALE_MS = 3 * 60 * 1000;
 
-// ── code generation ─────────────────────────────────────────────────────
+// ── helpers ─────────────────────────────────────────────────────────────
 
-/** 9 bytes → 12 base64url chars, URL-safe and unguessable. */
-export function newInviteCode() {
-  return crypto.randomBytes(9).toString('base64url');
+function audit(user, action, meeting, details = {}) {
+  AuditService.log({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action,
+    resource: 'meeting',
+    resourceId: meeting._id,
+    details: { title: meeting.title, ...details },
+  });
 }
 
-export function buildInviteUrl(code) {
-  return `${env.appUrl}/meet/${code}`;
+/** upcoming | live | ended | cancelled — "ended" also covers a scheduled meeting whose time has passed. */
+export function phaseOf(meeting, now = new Date()) {
+  if (meeting.status === 'cancelled') return 'cancelled';
+  if (meeting.status === 'completed') return 'ended';
+  if (meeting.status === 'live') return 'live';
+  return meeting.endAt && meeting.endAt < now ? 'ended' : 'upcoming';
 }
 
-/**
- * Returns the meeting's invitation code, creating one if absent.
- * Idempotent: concurrent callers converge on the same code because the unique
- * index on `invite.code` makes the loser of the race retry against the winner.
- */
-export async function ensureInviteCode(meeting) {
-  if (meeting.invite?.code && !meeting.invite.revokedAt) return meeting.invite.code;
+const PHASE_MESSAGES = {
+  ended: 'This meeting has ended.',
+  cancelled: 'This meeting has been cancelled.',
+};
 
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const code = newInviteCode();
-    try {
-      const updated = await Meeting.findOneAndUpdate(
-        { _id: meeting._id, $or: [{ 'invite.code': { $exists: false } }, { 'invite.code': null }] },
-        {
-          $set: {
-            'invite.code': code,
-            'invite.createdAt': new Date(),
-            'invite.revokedAt': null,
-          },
-          $inc: { 'invite.version': 1 },
-        },
-        { new: true }
-      );
-      if (updated) return updated.invite.code;
-
-      // Someone else set it first — use theirs.
-      const current = await Meeting.findById(meeting._id).select('invite').lean();
-      if (current?.invite?.code) return current.invite.code;
-    } catch (err) {
-      // Duplicate code (astronomically unlikely) — try another one.
-      if (err?.code !== 11000) throw err;
-    }
-  }
-  throw new ApiError(500, 'Could not allocate a meeting link');
-}
-
-// ── access evaluation ───────────────────────────────────────────────────
-
-function isOrganizer(user, meeting) {
-  return Boolean(user) && String(meeting.organizerId) === String(user.id);
-}
-
-/** Is this signed-in user on the organizer's invitation list (id or email)? */
-function isInvitedParticipant(user, meeting) {
-  if (!user) return false;
-  const email = String(user.email || '').toLowerCase();
-  return (meeting.participants || []).some(
-    (p) =>
-      (p.userId && String(p.userId) === String(user.id)) ||
-      (p.email && email && String(p.email).toLowerCase() === email)
-  );
-}
-
-/**
- * Decides what a visitor may do, without side effects.
- *
- * @returns {{ action: string, reason: string|null, viewer: object, canSeeParticipants: boolean }}
- *   action ∈ invalid | expired | cancelled | ended | not_started | signin | restricted |
- *            request | join | waiting
- */
-export function evaluateAccess(meeting, { user = null, hasGuestIdentity = false } = {}) {
-  const access = meeting.access || {};
-
-  if (!meeting.invite?.code || meeting.invite.revokedAt) {
-    return { action: 'invalid', reason: 'This meeting link is no longer active.', canSeeParticipants: false };
-  }
-  if (meeting.invite.expiresAt && new Date(meeting.invite.expiresAt) < new Date()) {
-    return { action: 'expired', reason: 'This meeting link has expired.', canSeeParticipants: false };
-  }
-  if (meeting.status === 'cancelled') {
-    return { action: 'cancelled', reason: 'This meeting was cancelled.', canSeeParticipants: false };
-  }
-  if (meeting.status === 'completed') {
-    return { action: 'ended', reason: 'This meeting has ended.', canSeeParticipants: true };
-  }
-
-  const organizer = isOrganizer(user, meeting);
-  const invited = isInvitedParticipant(user, meeting);
-  const privileged = organizer || invited;
-
-  // Mode gate. An invited person always passes; they were explicitly added.
-  if (!privileged) {
-    if (access.mode === 'restricted') {
-      if (!user) {
-        return {
-          action: 'signin',
-          reason: 'This meeting is restricted. Sign in to check whether you have access.',
-          canSeeParticipants: false,
-        };
-      }
-      return {
-        action: access.requireApproval ? 'request' : 'restricted',
-        reason: access.requireApproval
-          ? null
-          : 'You don’t have permission to join this meeting. Ask the organizer to invite you.',
-        canSeeParticipants: false,
-      };
-    }
-    if (access.mode === 'authenticated' && !user) {
-      return {
-        action: 'signin',
-        reason: 'Sign in to your LifeOS account to join this meeting.',
-        canSeeParticipants: Boolean(access.showParticipants),
-      };
-    }
-    if (access.mode === 'public' && !user && !access.allowGuests) {
-      return {
-        action: 'signin',
-        reason: 'Sign in or create a LifeOS account to join this meeting.',
-        canSeeParticipants: Boolean(access.showParticipants),
-      };
-    }
-  }
-
-  // Not started yet: show the invitation, but the room opens at start time.
-  const startMs = new Date(meeting.startAt).getTime();
-  const earlyWindowMs = 15 * 60 * 1000; // organizers commonly open 15 min early
-  if (meeting.status === 'scheduled' && Date.now() < startMs - earlyWindowMs && !organizer) {
-    return {
-      action: 'not_started',
-      reason: null,
-      canSeeParticipants: Boolean(access.showParticipants),
-      viewer: { isOrganizer: organizer, isInvited: invited },
-    };
-  }
-
-  if (access.requireApproval && !privileged) {
-    return {
-      action: hasGuestIdentity ? 'waiting' : 'request',
-      reason: null,
-      canSeeParticipants: Boolean(access.showParticipants),
-      viewer: { isOrganizer: organizer, isInvited: invited },
-    };
-  }
-
+function settingsOf(meeting, extra = {}) {
+  const inv = meeting.invite || {};
   return {
-    action: 'join',
-    reason: null,
-    canSeeParticipants: Boolean(access.showParticipants) || privileged,
-    viewer: { isOrganizer: organizer, isInvited: invited },
+    path: invitePath(meeting._id, inv.version || 1),
+    enabled: inv.enabled !== false,
+    accessMode: inv.accessMode || 'link',
+    hasPassword: true,
+    version: inv.version || 1,
+    createdAt: inv.createdAt || null,
+    regeneratedAt: inv.regeneratedAt || null,
+    locked: Boolean(inv.lockedUntil && inv.lockedUntil > new Date()),
+    shareMinutes: meeting.minutesSharing?.enabled !== false,
+    allowRecording: meeting.recordingPolicy?.anyone !== false,
+    ...extra,
   };
 }
 
-/** Loads a meeting by invitation code. Never leaks whether an id exists. */
-async function loadByCode(code) {
-  const clean = String(code || '').trim();
-  // Codes are 12 chars; reject nonsense before touching the database.
-  if (clean.length < 8 || clean.length > 40 || !/^[A-Za-z0-9_-]+$/.test(clean)) {
-    throw ApiError.notFound('This meeting link is not valid.');
-  }
-  const meeting = await Meeting.findOne({ 'invite.code': clean });
-  if (!meeting) throw ApiError.notFound('This meeting link is not valid.');
+function cleanName(raw) {
+  return Array.from(String(raw || ''))
+    .filter((ch) => ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127 && ch !== '<' && ch !== '>')
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
+async function findByToken(token, { withPassword = false } = {}) {
+  if (!INVITE_TOKEN_RE.test(String(token || ''))) throw ApiError.notFound('Meeting not found');
+  let q = Meeting.findOne({ 'invite.tokenHash': hashInviteToken(token) });
+  if (withPassword) q = q.select('+invite.passwordHash');
+  const meeting = await q;
+  if (!meeting) throw ApiError.notFound('Meeting not found');
+  // Defence in depth: the stored hash matched, but make sure it is still the CURRENT version.
+  if (deriveInviteToken(meeting._id, meeting.invite?.version || 1) !== token) throw ApiError.notFound('Meeting not found');
   return meeting;
 }
 
-// ── public invitation view ──────────────────────────────────────────────
-
-function displayStatus(meeting) {
-  if (meeting.status === 'live') return 'live';
-  if (meeting.status === 'cancelled') return 'cancelled';
-  if (meeting.status === 'completed') return 'ended';
-  const start = new Date(meeting.startAt).getTime();
-  if (Date.now() >= start - 15 * 60 * 1000 && Date.now() < new Date(meeting.endAt).getTime()) return 'starting_soon';
-  return 'upcoming';
-}
-
-/**
- * The invitation page payload. Safe to serve to anyone holding the code —
- * the access decision is computed per viewer and only the fields that viewer is
- * entitled to see are returned.
- */
-export async function getInvitation(code, { user = null, hasGuestIdentity = false } = {}) {
-  const meeting = await loadByCode(code);
-  const decision = evaluateAccess(meeting, { user, hasGuestIdentity });
-  const access = meeting.access || {};
-
-  const organizer = await User.findById(meeting.organizerId).select('name').lean();
-
-  // Participant names are only exposed when the organizer allows it AND the
-  // viewer is allowed to see them. The COUNT alone is safe and is what the
-  // invitation page advertises.
-  const participants = (meeting.participants || []).map((p) => ({
-    name: p.name,
-    role: p.role,
-  }));
-
-  const attendance = await MeetingAttendance.countDocuments({ meetingId: meeting._id });
-
-  return {
-    link: {
-      code: meeting.invite.code,
-      url: buildInviteUrl(meeting.invite.code),
-      version: meeting.invite.version || 0,
-    },
-    meeting: {
-      title: meeting.title,
-      description: meeting.description || null,
-      type: meeting.type,
-      agenda: meeting.agenda || null,
-      location: meeting.location || null,
-      timezone: meeting.timezone,
-      startAt: meeting.startAt,
-      endAt: meeting.endAt,
-      status: meeting.status,
-      displayStatus: displayStatus(meeting),
-    },
-    organizer: { name: organizer?.name || 'A LifeOS user' },
-    participants: {
-      count: Math.max(participants.length, attendance),
-      // Names are withheld unless allowed, so a leaked link cannot enumerate the
-      // guest list of a meeting.
-      names: decision.canSeeParticipants ? participants.map((p) => p.name) : null,
-      showNames: Boolean(decision.canSeeParticipants),
-    },
-    access: {
-      mode: access.mode || 'authenticated',
-      allowGuests: Boolean(access.allowGuests),
-      requireApproval: Boolean(access.requireApproval),
-      // External room (Zoom/Meet/Teams) — safe to expose, the organizer shared it.
-      externalUrl: access.externalUrl || null,
-    },
-    viewer: {
-      signedIn: Boolean(user),
-      name: user?.name || null,
-      email: user?.email || null,
-      isOrganizer: Boolean(decision.viewer?.isOrganizer),
-      isInvited: Boolean(decision.viewer?.isInvited),
-      action: decision.action,
-      reason: decision.reason,
-    },
-  };
-}
-
-// ── attendance helpers ──────────────────────────────────────────────────
-
-function guestKeyFrom(raw) {
-  const value = String(raw || '').trim();
-  if (value.length < 16 || value.length > 200) return null;
-  return hashToken(`lifeos-guest:${value}`);
-}
-
-/** Raises an ApiError explaining why the visitor may not join. */
-function assertActionable(decision) {
-  if (decision.action === 'join' || decision.action === 'request') return;
-  const messages = {
-    invalid: 'This meeting link is not valid.',
-    expired: 'This meeting link has expired.',
-    cancelled: 'This meeting was cancelled.',
-    ended: 'This meeting has ended.',
-    signin: decision.reason || 'Please sign in to join this meeting.',
-    restricted: 'You don’t have permission to join this meeting.',
-  };
-  if (decision.action === 'signin') throw ApiError.unauthorized(messages.signin);
-  if (decision.action === 'restricted') throw ApiError.forbidden(messages.restricted);
-  if (decision.action === 'not_started') {
-    throw ApiError.conflict('This meeting hasn’t started yet. The join button opens shortly before it begins.');
+function assertEnabled(meeting) {
+  if (meeting.invite?.enabled === false) {
+    throw new ApiError(403, 'The organizer has turned this invitation link off.', { code: 'LINK_DISABLED' });
   }
-  throw ApiError.badRequest(messages[decision.action] || 'You cannot join this meeting.');
 }
 
-/** Adds the joiner to the organizer's participant list so notifications reach them. */
-async function attachParticipant(meeting, { user, guestName, guestEmail }) {
-  const existing = (meeting.participants || []).some(
-    (p) => (user && p.userId && String(p.userId) === String(user.id)) || (!user && guestName && p.name === guestName)
+/** A signed-in person who already joined with the CURRENT link may come back without the password. */
+async function isReturning(meeting, authUser) {
+  if (!authUser) return false;
+  const row = await MeetingParticipant.findOne({ meetingId: meeting._id, key: `u:${authUser.id}` }).select('inviteVersion').lean();
+  return Boolean(row && row.inviteVersion === (meeting.invite?.version || 1));
+}
+
+/** Their own workspace is where link-joiner notifications live; prefer the meeting's workspace if they belong to it. */
+async function notifyTenantFor(meeting, authUser) {
+  const ms = await Membership.find({ userId: authUser.id, status: 'active' }).select('tenantId').sort({ createdAt: 1 }).limit(25).lean();
+  if (!ms.length) return undefined;
+  return (ms.find((m) => String(m.tenantId) === String(meeting.tenantId)) || ms[0]).tenantId;
+}
+
+async function headcount(meeting) {
+  const keys = new Set(
+    (meeting.participants || []).map((p) => (p.userId ? `u:${p.userId}` : `n:${(p.email || p.name || '').toLowerCase()}`))
   );
-  if (existing) return;
-
-  const entry = user
-    ? { userId: user.id, name: user.name, email: user.email, role: 'attendee' }
-    : { name: guestName, email: guestEmail, role: 'attendee' };
-
-  await Meeting.updateOne({ _id: meeting._id }, { $push: { participants: entry } });
-  meeting.participants.push(entry);
+  const rows = await MeetingParticipant.find({ meetingId: meeting._id }).select('key').lean();
+  rows.forEach((r) => keys.add(r.key));
+  return keys.size;
 }
 
-/**
- * Records (or updates) a person's attendance row.
- *
- * Repeat joins NEVER create a second row: the unique partial indexes on
- * (meetingId,userId) and (meetingId,guestKey) make the upsert converge, and the
- * update path preserves `firstJoinedAt` while refreshing `lastJoinedAt`.
- */
-async function upsertAttendance(meeting, { user, guestKeyRaw, guestName, guestEmail, joinMethod, state }) {
-  const guestKey = user ? null : guestKeyFrom(guestKeyRaw);
-  const displayName = user ? user.name : String(guestName || '').trim();
-
-  if (!displayName) {
-    throw ApiError.badRequest('Please enter your name so the organizer knows who joined.');
-  }
-  if (!user && !guestKey) {
-    throw ApiError.badRequest('A guest pass is required to join as a guest. Please reload the page and try again.');
-  }
-
-  const query = user ? { meetingId: meeting._id, userId: user.id } : { meetingId: meeting._id, guestKey };
-
-  const now = new Date();
-  const set = {
-    tenantId: meeting.tenantId,
-    meetingId: meeting._id,
-    name: displayName,
-    attendance: state,
-    lastSeenAt: now,
-  };
-  if (user) set.userId = user.id;
-  else set.guestKey = guestKey;
-  if (guestEmail) set.email = String(guestEmail).toLowerCase().slice(0, 254);
-  else if (user?.email) set.email = user.email;
-  if (meeting.status === 'live') {
-    set.lastJoinedAt = now;
-    set.leftAt = null;
-  }
-
-  const result = await MeetingAttendance.findOneAndUpdate(
-    query,
-    {
-      $set: set,
-      $setOnInsert: {
-        role: isOrganizer(user, meeting) ? 'organizer' : user ? 'attendee' : 'guest',
-        joinMethod,
-        firstJoinedAt: meeting.status === 'live' ? now : null,
-        joinCount: 0,
-        canViewParticipants: true,
-      },
-      $inc: { joinCount: meeting.status === 'live' ? 1 : 0 },
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
-
-  return result;
+async function organizerName(meeting) {
+  const org = await User.findById(meeting.organizerId).select('name').lean();
+  return org?.name || 'LifeOS user';
 }
 
-// ── join / request / leave ──────────────────────────────────────────────
-
-/**
- * The join flow behind the invitation page's JOIN MEETING button.
- * Everything is derived server-side; the client only supplies identity.
- */
-export async function joinViaInvite(code, { user = null, guestKeyRaw, guestName, guestEmail, requestOnly = false } = {}) {
-  const meeting = await loadByCode(code);
-  const decision = evaluateAccess(meeting, { user, hasGuestIdentity: Boolean(guestKeyRaw) });
-
-  const wantsRequest = requestOnly || decision.action === 'request' || meeting.access?.requireApproval;
-
-  if (decision.action === 'signin') {
-    // A signed-out visitor without guest access still gets a useful answer.
-    throw ApiError.unauthorized(decision.reason || 'Please sign in to join this meeting.');
-  }
-  if (decision.action === 'restricted') {
-    throw ApiError.forbidden('You don’t have permission to join this meeting.');
-  }
-  if (['invalid', 'expired', 'cancelled', 'ended'].includes(decision.action)) assertActionable(decision);
-  if (!wantsRequest) assertActionable(decision);
-
-  // Guests need the switch on; signed-in users never do.
-  if (!user && !meeting.access?.allowGuests) {
-    throw ApiError.forbidden('This meeting requires a LifeOS account. Sign in or create one to join.');
-  }
-
-  const privileged = decision.viewer?.isOrganizer || decision.viewer?.isInvited;
-  const state = wantsRequest && !privileged ? 'requested' : 'attended';
-
-  const attendance = await upsertAttendance(meeting, {
-    user,
-    guestKeyRaw,
-    guestName,
-    guestEmail,
-    joinMethod: 'link',
-    state,
-  });
-
-  // Only people who are actually allowed in join the participant list. Someone
-  // awaiting approval must not appear to be coming.
-  if (state === 'attended') {
-    await attachParticipant(meeting, { user, guestName, guestEmail });
-  } else if (user) {
-    // Let the organizer know there is a pending request.
-    notificationService.notify({
-      tenantId: meeting.tenantId,
-      userId: meeting.organizerId,
-      type: 'meeting',
-      module: 'meeting',
-      title: 'Someone asked to join your meeting',
-      message: `${user.name} requested to join “${meeting.title}”.`,
-      relatedId: meeting._id,
-      priority: 'high',
-      data: { meetingId: String(meeting._id), attendanceId: String(attendance._id) },
-    });
-  }
-
+/** What a verified visitor may see. Never includes notes, transcript, recording, action items or names. */
+async function fullDetails(meeting) {
+  const [name, count] = await Promise.all([organizerName(meeting), headcount(meeting)]);
   return {
-    meetingId: String(meeting._id),
-    attendanceId: String(attendance._id),
-    state,
-    requiresApproval: state === 'requested',
-    // This is the first point at which the internal id is disclosed.
-    roomPath: `/meetings/${meeting._id}/live`,
-    meeting: {
-      title: meeting.title,
-      startAt: meeting.startAt,
-      endAt: meeting.endAt,
-      timezone: meeting.timezone,
-      status: meeting.status,
-    },
-  };
-}
-
-/**
- * Join from INSIDE the app (the meeting room's own "Join" action), where the
- * user is already authenticated and therefore already tenant-scoped. No code is
- * involved, so the access mode does not gate this path — the normal meeting
- * access filter (`loadForUser`) already decided they may see the meeting.
- */
-export async function joinAsMember(user, meetingId) {
-  assertObjectId(meetingId);
-  const meeting = await Meeting.findOne({ _id: meetingId, tenantId: user.tenantId });
-  if (!meeting) throw ApiError.notFound('Meeting not found');
-  if (meeting.status === 'cancelled') throw ApiError.conflict('This meeting was cancelled.');
-
-  const attendance = await upsertAttendance(meeting, {
-    user,
-    joinMethod: 'direct',
-    state: meeting.status === 'live' ? 'attended' : 'approved',
-  });
-
-  return {
-    meetingId: String(meeting._id),
-    attendanceId: String(attendance._id),
-    attendance: attendance.attendance,
-  };
-}
-
-/** Accept / decline from the "Invitations" list or the invitation page. */
-export async function respondToInvitation(user, meetingId, response) {
-  assertObjectId(meetingId);
-  const meeting = await Meeting.findOne({ _id: meetingId, tenantId: user.tenantId }).lean();
-  if (!meeting) throw ApiError.notFound('Meeting not found');
-
-  const attendance = await MeetingAttendance.findOneAndUpdate(
-    { meetingId: meeting._id, userId: user.id },
-    {
-      $set: {
-        response,
-        respondedAt: new Date(),
-        attendance: response === 'declined' ? 'declined' : 'attended',
-      },
-      $setOnInsert: {
-        tenantId: meeting.tenantId,
-        meetingId: meeting._id,
-        userId: user.id,
-        name: user.name,
-        email: user.email,
-        role: 'attendee',
-        joinMethod: 'direct',
-      },
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
-
-  notificationService.notify({
-    tenantId: meeting.tenantId,
-    userId: meeting.organizerId,
-    type: 'meeting',
-    module: 'meeting',
-    title: response === 'declined' ? 'Invitation declined' : 'Invitation accepted',
-    message: `${user.name} ${response === 'declined' ? 'declined' : 'accepted'} “${meeting.title}”.`,
-    relatedId: meeting._id,
-    data: { meetingId: String(meeting._id) },
-  });
-
-  return { meetingId: String(meeting._id), response, attendanceId: String(attendance._id) };
-}
-
-/** Records a departure and accrues attendance time. */
-export async function leaveMeeting(user, meetingId) {
-  assertObjectId(meetingId);
-  const now = new Date();
-  const row = await MeetingAttendance.findOne({ meetingId, userId: user.id });
-  if (!row) return { left: false };
-
-  const elapsed = row.lastJoinedAt ? Math.round((now - new Date(row.lastJoinedAt)) / 1000) : 0;
-  row.leftAt = now;
-  row.attendedSec = (row.attendedSec || 0) + Math.max(0, elapsed);
-  await row.save();
-
-  return { left: true, attendedSec: row.attendedSec };
-}
-
-/** "Save to my LifeOS calendar" for a signed-in viewer who is not joining yet. */
-export async function addInviteToMyCalendar(user, code) {
-  const meeting = await loadByCode(code);
-
-  const existing = await CalendarEvent.findOne({
-    tenantId: user.tenantId,
-    userId: user.id,
-    meetingId: meeting._id,
-  }).lean();
-
-  if (existing) return { calendarEventId: String(existing._id), alreadyAdded: true };
-
-  const event = await CalendarEvent.create({
-    tenantId: user.tenantId,
-    userId: user.id,
     title: meeting.title,
-    type: 'meeting',
-    description: meeting.description,
-    allDay: false,
+    description: meeting.description || '',
+    agenda: meeting.agenda || '',
+    location: meeting.location || '',
+    organizerName: name,
     startAt: meeting.startAt,
     endAt: meeting.endAt,
-    meetingId: meeting._id,
-  });
-
-  await upsertAttendance(meeting, {
-    user,
-    joinMethod: 'link',
-    state: 'invited',
-  });
-
-  return { calendarEventId: String(event._id), alreadyAdded: false };
-}
-
-// ── organizer-side management ───────────────────────────────────────────
-
-function canManage(user, meeting) {
-  return user.tenantRole === 'owner' || String(meeting.organizerId) === String(user.id);
-}
-
-export async function organizerInviteInfo(user, meetingId) {
-  assertObjectId(meetingId);
-  const meeting = await Meeting.findOne({ _id: meetingId, tenantId: user.tenantId });
-  if (!meeting) throw ApiError.notFound('Meeting not found');
-  if (!canManage(user, meeting)) throw ApiError.forbidden('Only the organizer can manage the invitation link');
-
-  const code = await ensureInviteCode(meeting);
-  const [counts, guestCount] = await Promise.all([
-    MeetingAttendance.countDocuments({ meetingId: meeting._id }),
-    MeetingAttendance.countDocuments({ meetingId: meeting._id, userId: null }),
-  ]);
-
-  return {
-    code,
-    url: buildInviteUrl(code),
-    version: meeting.invite?.version || 0,
-    createdAt: meeting.invite?.createdAt || null,
-    regeneratedAt: meeting.invite?.regeneratedAt || null,
-    expiresAt: meeting.invite?.expiresAt || null,
-    access: {
-      mode: meeting.access?.mode || 'authenticated',
-      allowGuests: Boolean(meeting.access?.allowGuests),
-      requireApproval: Boolean(meeting.access?.requireApproval),
-      showParticipants: Boolean(meeting.access?.showParticipants),
-      externalUrl: meeting.access?.externalUrl || null,
-    },
-    attendance: { total: counts, guests: guestCount },
+    timezone: meeting.timezone,
+    status: meeting.status,
+    phase: phaseOf(meeting),
+    participantCount: count,
+    videoRoom: usesNativeRoom(meeting),
   };
 }
 
-/**
- * Issues a brand-new code. Every previously shared link stops working
- * immediately — this is the organizer's remedy if a link leaks.
- */
-export async function regenerateInvite(user, meetingId) {
-  assertObjectId(meetingId);
-  const meeting = await Meeting.findOne({ _id: meetingId, tenantId: user.tenantId });
-  if (!meeting) throw ApiError.notFound('Meeting not found');
-  if (!canManage(user, meeting)) throw ApiError.forbidden('Only the organizer can regenerate the meeting link');
+// ── organizer: manage the link ──────────────────────────────────────────
 
-  // Retry only on the (astronomically unlikely) unique-index collision.
-  let code;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const candidate = newInviteCode();
-    try {
-      const updated = await Meeting.findOneAndUpdate(
-        { _id: meeting._id },
-        {
-          $set: {
-            'invite.code': candidate,
-            'invite.regeneratedAt': new Date(),
-            'invite.revokedAt': null,
-          },
-          $inc: { 'invite.version': 1 },
-        },
-        { new: true }
-      );
-      code = updated.invite.code;
-      break;
-    } catch (err) {
-      if (err?.code !== 11000) throw err;
-    }
-  }
-  if (!code) throw new ApiError(500, 'Could not regenerate the meeting link');
-
-  AuditService.log({
-    tenantId: meeting.tenantId,
-    userId: user.id,
-    action: 'meeting.invite.regenerate',
-    resource: 'meeting',
-    resourceId: meeting._id,
-    details: { version: (meeting.invite?.version || 0) + 1 },
-  });
-
-  return { code, url: buildInviteUrl(code), version: (meeting.invite?.version || 0) + 1 };
+/** Older meetings (created before links existed) get a link the first time the organizer asks. */
+async function provisionIfMissing(meeting) {
+  if (meeting.invite?.createdAt) return null;
+  const password = generateInvitePassword();
+  const fields = buildInviteFields(meeting._id, { passwordHash: await hashInvitePassword(password) });
+  const res = await Meeting.updateOne({ _id: meeting._id, 'invite.createdAt': { $exists: false } }, { $set: { invite: fields } });
+  if (res.modifiedCount === 0) return null; // another request provisioned it first
+  return password;
 }
 
-/** Turns the link off entirely without deleting the meeting. */
-export async function revokeInvite(user, meetingId) {
-  assertObjectId(meetingId);
-  const meeting = await Meeting.findOne({ _id: meetingId, tenantId: user.tenantId });
-  if (!meeting) throw ApiError.notFound('Meeting not found');
-  if (!canManage(user, meeting)) throw ApiError.forbidden('Only the organizer can disable the meeting link');
-
-  await Meeting.updateOne({ _id: meeting._id }, { $set: { 'invite.revokedAt': new Date() } });
-  return { revoked: true };
+export async function getInvite(user, id) {
+  const meeting = await loadForManage(user, id);
+  const password = await provisionIfMissing(meeting);
+  const fresh = await Meeting.findById(meeting._id);
+  return settingsOf(fresh, password ? { password } : {});
 }
 
-export async function updateAccess(user, meetingId, patch = {}) {
-  assertObjectId(meetingId);
-  const meeting = await Meeting.findOne({ _id: meetingId, tenantId: user.tenantId }).lean();
-  if (!meeting) throw ApiError.notFound('Meeting not found');
-  if (!canManage(user, meeting)) throw ApiError.forbidden('Only the organizer can change meeting access');
+export async function updateInvite(user, id, patch) {
+  const meeting = await loadForManage(user, id);
+  await provisionIfMissing(meeting);
 
   const set = {};
-  if (patch.mode !== undefined) {
-    if (!['public', 'authenticated', 'restricted'].includes(patch.mode)) {
-      throw ApiError.badRequest('Unknown access mode');
-    }
-    set['access.mode'] = patch.mode;
+  if (typeof patch.enabled === 'boolean') set['invite.enabled'] = patch.enabled;
+  if (patch.accessMode) set['invite.accessMode'] = patch.accessMode;
+  if (typeof patch.shareMinutes === 'boolean') set['minutesSharing.enabled'] = patch.shareMinutes;
+  if (typeof patch.allowRecording === 'boolean') set['recordingPolicy.anyone'] = patch.allowRecording;
+
+  let password;
+  if (patch.password || patch.regeneratePassword) {
+    password = patch.password || generateInvitePassword();
+    set['invite.passwordHash'] = await hashInvitePassword(password);
+    set['invite.failedAttempts'] = 0;
+    set['invite.lockedUntil'] = null;
   }
-  if (patch.allowGuests !== undefined) set['access.allowGuests'] = Boolean(patch.allowGuests);
-  if (patch.requireApproval !== undefined) set['access.requireApproval'] = Boolean(patch.requireApproval);
-  if (patch.showParticipants !== undefined) set['access.showParticipants'] = Boolean(patch.showParticipants);
-  if (patch.externalUrl !== undefined) {
-    const url = patch.externalUrl ? String(patch.externalUrl).trim().slice(0, 1000) : '';
-    // Only http(s) — never let a meeting field smuggle a javascript: URL.
-    if (url && !/^https?:\/\//i.test(url)) {
-      throw ApiError.badRequest('The meeting link must start with http:// or https://');
-    }
-    set['access.externalUrl'] = url || null;
-  }
+  if (Object.keys(set).length) await Meeting.updateOne({ _id: meeting._id, tenantId: user.tenantId }, { $set: set });
 
-  if (Object.keys(set).length === 0) throw ApiError.badRequest('Nothing to update');
-
-  const updated = await Meeting.findOneAndUpdate({ _id: meetingId }, { $set: set }, { new: true }).lean();
-
-  return {
-    access: {
-      mode: updated.access.mode,
-      allowGuests: updated.access.allowGuests,
-      requireApproval: updated.access.requireApproval,
-      showParticipants: updated.access.showParticipants,
-      externalUrl: updated.access.externalUrl,
-    },
-  };
+  audit(user, 'meeting.invite.update', meeting, {
+    enabled: patch.enabled,
+    accessMode: patch.accessMode,
+    shareMinutes: patch.shareMinutes,
+    allowRecording: patch.allowRecording,
+    passwordChanged: Boolean(password),
+  });
+  const fresh = await Meeting.findById(meeting._id);
+  return settingsOf(fresh, password ? { password } : {});
 }
 
-// ── attendance roster ───────────────────────────────────────────────────
+/** New token (old link and every pass issued through it stop working) + a fresh password. */
+export async function regenerateInvite(user, id) {
+  const meeting = await loadForManage(user, id);
+  await provisionIfMissing(meeting);
+  const current = await Meeting.findById(meeting._id).select('invite.version');
+  const version = (current?.invite?.version || 1) + 1;
+  const password = generateInvitePassword();
+  await Meeting.updateOne(
+    { _id: meeting._id, tenantId: user.tenantId },
+    {
+      $set: {
+        'invite.version': version,
+        'invite.tokenHash': hashInviteToken(deriveInviteToken(meeting._id, version)),
+        'invite.passwordHash': await hashInvitePassword(password),
+        'invite.failedAttempts': 0,
+        'invite.lockedUntil': null,
+        'invite.regeneratedAt': new Date(),
+      },
+    }
+  );
+  audit(user, 'meeting.invite.regenerate', meeting, { version });
+  const fresh = await Meeting.findById(meeting._id);
+  return settingsOf(fresh, { password });
+}
 
-export async function listAttendance(user, meetingId) {
-  assertObjectId(meetingId);
-  const meeting = await Meeting.findOne({ _id: meetingId, tenantId: user.tenantId }).lean();
-  if (!meeting) throw ApiError.notFound('Meeting not found');
-
-  const rows = await MeetingAttendance.find({ meetingId: meeting._id }).sort({ createdAt: 1 }).lean();
-
+export async function listInviteParticipants(user, id) {
+  const meeting = await loadForManage(user, id);
+  const rows = await MeetingParticipant.find({ meetingId: meeting._id }).sort({ createdAt: 1 }).limit(500).lean();
   return {
-    items: rows.map((r) => ({
+    items: rows.map((r) => {
+      // A browser that closed without leaving stops sending heartbeats; show it as left rather than still in the room.
+      const vanished = r.status === 'joined' && r.lastSeenAt && Date.now() - new Date(r.lastSeenAt).getTime() > ROOM_STALE_MS;
+      return {
       id: String(r._id),
-      userId: r.userId ? String(r.userId) : null,
-      isGuest: !r.userId,
-      name: r.name,
-      email: r.email || null,
+      name: r.displayName,
+      isGuest: Boolean(r.isGuest),
       role: r.role,
       joinMethod: r.joinMethod,
-      attendance: r.attendance,
       response: r.response,
-      firstJoinedAt: r.firstJoinedAt,
-      lastJoinedAt: r.lastJoinedAt,
-      leftAt: r.leftAt,
-      joinCount: r.joinCount,
-      attendedSec: r.attendedSec,
-    })),
-    counts: rows.reduce(
-      (acc, r) => {
-        acc.total += 1;
-        acc[r.attendance] = (acc[r.attendance] || 0) + 1;
-        if (!r.userId) acc.guests += 1;
-        return acc;
-      },
-      { total: 0, guests: 0 }
-    ),
+      status: vanished ? 'left' : r.status,
+      joinedAt: r.joinedAt || null,
+      leftAt: vanished ? r.lastSeenAt : r.leftAt || null,
+      registeredAt: r.createdAt,
+      };
+    }),
+    total: rows.length,
   };
 }
 
-/** Approve or decline a pending join request. */
-export async function reviewAttendance(user, meetingId, attendanceId, decision) {
-  assertObjectId(meetingId);
-  assertObjectId(attendanceId, 'attendanceId');
+// ── public: the invitation page ─────────────────────────────────────────
 
-  const meeting = await Meeting.findOne({ _id: meetingId, tenantId: user.tenantId });
-  if (!meeting) throw ApiError.notFound('Meeting not found');
-  if (!canManage(user, meeting)) throw ApiError.forbidden('Only the organizer can review join requests');
-
-  const row = await MeetingAttendance.findOne({ _id: attendanceId, meetingId: meeting._id });
-  if (!row) throw ApiError.notFound('Join request not found');
-
-  row.attendance = decision === 'approve' ? 'approved' : 'declined';
-  row.response = decision === 'approve' ? 'accepted' : 'declined';
-  row.respondedAt = new Date();
-  await row.save();
-
-  if (decision === 'approve') {
-    if (row.userId) {
-      await attachParticipant(meeting, { user: { id: String(row.userId), name: row.name, email: row.email } });
-      notificationService.notify({
-        tenantId: meeting.tenantId,
-        userId: row.userId,
-        type: 'meeting',
-        module: 'meeting',
-        title: 'Your request to join was approved',
-        message: `You can now join “${meeting.title}”.`,
-        relatedId: meeting._id,
-        priority: 'high',
-        data: { meetingId: String(meeting._id) },
-      });
-    }
-  }
-
-  return { id: String(row._id), attendance: row.attendance };
+/** Minimal card shown to anyone holding the link (no password yet). */
+export async function getInvitation(token, authUser) {
+  const meeting = await findByToken(token);
+  assertEnabled(meeting);
+  const [name, count] = await Promise.all([organizerName(meeting), headcount(meeting)]);
+  const phase = phaseOf(meeting);
+  const mode = meeting.invite?.accessMode || 'link';
+  const isOrganizer = Boolean(authUser && String(meeting.organizerId) === authUser.id);
+  const returning = !isOrganizer && (await isReturning(meeting, authUser));
+  return {
+    title: meeting.title,
+    organizerName: name,
+    startAt: meeting.startAt,
+    endAt: meeting.endAt,
+    timezone: meeting.timezone,
+    status: meeting.status,
+    phase,
+    participantCount: count,
+    accessMode: mode,
+    canJoin: phase === 'upcoming' || phase === 'live',
+    message: PHASE_MESSAGES[phase] || null,
+    requiresLogin: mode !== 'link' && !authUser,
+    requiresPassword: !isOrganizer && !returning,
+    viewer: authUser ? { signedIn: true, name: authUser.name, isOrganizer } : { signedIn: false },
+  };
 }
 
-/** Removes someone from the meeting (organizer action). */
-export async function removeAttendance(user, meetingId, attendanceId) {
-  assertObjectId(meetingId);
-  assertObjectId(attendanceId, 'attendanceId');
-
-  const meeting = await Meeting.findOne({ _id: meetingId, tenantId: user.tenantId });
-  if (!meeting) throw ApiError.notFound('Meeting not found');
-  if (!canManage(user, meeting)) throw ApiError.forbidden('Only the organizer can remove participants');
-
-  const row = await MeetingAttendance.findOne({ _id: attendanceId, meetingId: meeting._id });
-  if (!row) throw ApiError.notFound('Participant not found');
-
-  row.attendance = 'removed';
-  await row.save();
-
-  if (row.userId) {
-    await Meeting.updateOne({ _id: meeting._id }, { $pull: { participants: { userId: row.userId } } });
-  } else {
-    await Meeting.updateOne({ _id: meeting._id }, { $pull: { participants: { name: row.name } } });
+async function registerFailure(meeting) {
+  // Atomic increment, then read the counter back (plain update + find works on every MongoDB-compatible server).
+  await Meeting.updateOne({ _id: meeting._id }, { $inc: { 'invite.failedAttempts': 1 } });
+  const upd = await Meeting.findById(meeting._id).select('invite.failedAttempts').lean();
+  if ((upd?.invite?.failedAttempts || 0) >= MAX_FAILED_ATTEMPTS) {
+    await Meeting.updateOne(
+      { _id: meeting._id },
+      { $set: { 'invite.failedAttempts': 0, 'invite.lockedUntil': new Date(Date.now() + LOCK_MS) } }
+    );
   }
+}
 
-  return { id: String(row._id), attendance: 'removed' };
+async function upsertParticipant(meeting, { authUser, name, isOrganizer, email }) {
+  const key = authUser ? `u:${authUser.id}` : `g:${crypto.randomBytes(12).toString('hex')}`;
+  const insert = {
+    tenantId: meeting.tenantId,
+    displayName: authUser ? authUser.name : name,
+    isGuest: !authUser,
+    role: isOrganizer ? 'chair' : authUser ? 'attendee' : 'guest',
+    joinMethod: isOrganizer ? 'organizer' : 'link',
+    response: 'accepted',
+    status: 'registered',
+    ...(authUser ? { userId: authUser.id } : {}),
+    ...(!authUser && email ? { email } : {}),
+  };
+  const notifyTenantId = authUser ? await notifyTenantFor(meeting, authUser) : undefined;
+  const run = () =>
+    MeetingParticipant.findOneAndUpdate(
+      { meetingId: meeting._id, key },
+      { $setOnInsert: insert, $set: { lastSeenAt: new Date(), inviteVersion: meeting.invite?.version || 1, ...(notifyTenantId ? { notifyTenantId } : {}) } },
+      { upsert: true, new: true }
+    );
+  try {
+    return await run();
+  } catch (err) {
+    // Two simultaneous joins by the same user: the unique index rejects the second insert. Reuse the first.
+    if (err?.code === 11000) return MeetingParticipant.findOne({ meetingId: meeting._id, key });
+    throw err;
+  }
 }
 
 /**
- * The "Invitations" tab: meetings this user was invited to that still need an
- * answer, plus ones they accepted but have not joined.
+ * Password + access-mode check → participant record + meeting pass.
+ * Wrong-password answers are identical whether or not the meeting exists for other reasons.
  */
-export async function listMyInvitations(user) {
-  const rows = await MeetingAttendance.find({
-    tenantId: user.tenantId,
-    userId: user.id,
-    attendance: { $in: ['invited', 'requested', 'approved', 'attended'] },
-  })
-    .sort({ createdAt: -1 })
-    .limit(100)
-    .lean();
+export async function joinViaLink(token, { password, name, email } = {}, authUser) {
+  const meeting = await findByToken(token, { withPassword: true });
+  assertEnabled(meeting);
 
-  if (rows.length === 0) return { items: [], pending: 0 };
+  const phase = phaseOf(meeting);
+  if (phase === 'ended' || phase === 'cancelled') {
+    throw new ApiError(409, PHASE_MESSAGES[phase], { code: phase === 'cancelled' ? 'MEETING_CANCELLED' : 'MEETING_ENDED' });
+  }
+  const mode = meeting.invite?.accessMode || 'link';
+  const isOrganizer = Boolean(authUser && String(meeting.organizerId) === authUser.id);
+  const isListed = Boolean(authUser && meeting.participants.some((p) => p.userId && String(p.userId) === authUser.id));
 
-  const meetings = await Meeting.find({
-    tenantId: user.tenantId,
-    _id: { $in: rows.map((r) => r.meetingId) },
-  })
-    .select('title description type agenda location timezone startAt endAt status organizerId invite access')
-    .lean();
+  if (mode !== 'link' && !authUser) {
+    throw new ApiError(401, 'Sign in to LifeOS to join this meeting.', { code: 'LOGIN_REQUIRED' });
+  }
+  if (mode === 'restricted' && !isOrganizer && !isListed) {
+    throw new ApiError(403, "You don't have permission to join this meeting.", { code: 'NOT_INVITED' });
+  }
 
-  const byId = new Map(meetings.map((m) => [String(m._id), m]));
+  const guestName = authUser ? null : cleanName(name);
+  if (!authUser && guestName.length < 2) {
+    throw new ApiError(400, 'Enter your name to join.', { code: 'NAME_REQUIRED' });
+  }
 
-  const items = rows
-    .map((row) => {
-      const meeting = byId.get(String(row.meetingId));
-      if (!meeting) return null;
-      if (['cancelled'].includes(meeting.status)) return null;
-      return {
-        meetingId: String(meeting._id),
-        title: meeting.title,
-        type: meeting.type,
-        startAt: meeting.startAt,
-        endAt: meeting.endAt,
-        timezone: meeting.timezone,
-        location: meeting.location || meeting.access?.externalUrl || null,
-        status: meeting.status,
-        organizerId: String(meeting.organizerId),
-        isOrganizer: String(meeting.organizerId) === String(user.id),
-        inviteUrl: meeting.invite?.code ? buildInviteUrl(meeting.invite.code) : null,
-        myResponse: row.response,
-        myAttendance: row.attendance,
-        joinCount: row.joinCount,
-      };
-    })
-    .filter(Boolean);
+  // Organizer and (restricted mode) listed participants are already authorised; everyone else needs the password.
+  const returning = !isOrganizer && (await isReturning(meeting, authUser));
+  const needsPassword = !isOrganizer && !returning && !(mode === 'restricted' && isListed);
+  if (needsPassword) {
+    if (meeting.invite?.lockedUntil && meeting.invite.lockedUntil > new Date()) {
+      throw new ApiError(429, 'Too many wrong passwords. Please wait a few minutes and try again.', { code: 'LINK_LOCKED' });
+    }
+    if (!password) throw new ApiError(400, 'Enter the meeting password.', { code: 'PASSWORD_REQUIRED' });
+    const ok = await checkInvitePassword(password, meeting.invite?.passwordHash);
+    if (!ok) {
+      await registerFailure(meeting);
+      throw new ApiError(403, 'Incorrect password.', { code: 'WRONG_PASSWORD' });
+    }
+    if (meeting.invite?.failedAttempts) await Meeting.updateOne({ _id: meeting._id }, { $set: { 'invite.failedAttempts': 0 } });
+  }
 
-  return { items, pending: items.filter((i) => i.myResponse === 'pending').length };
+  const participant = await upsertParticipant(meeting, { authUser, name: guestName, isOrganizer, email: authUser ? '' : cleanEmail(email) });
+  const pass = signMeetingPass({ meetingId: meeting._id, participantId: participant._id, version: meeting.invite?.version || 1 });
+  return {
+    pass,
+    participant: {
+      id: String(participant._id),
+      name: participant.displayName,
+      role: participant.role,
+      isGuest: Boolean(participant.isGuest),
+      joinMethod: participant.joinMethod,
+    },
+    meeting: await fullDetails(meeting),
+  };
 }
 
-/** Marks people who never joined as no-shows once a meeting completes. */
-export async function markNoShows(meetingId) {
-  await MeetingAttendance.updateMany(
-    { meetingId, attendance: { $in: ['invited', 'approved'] } },
-    { $set: { attendance: 'no_show' } }
-  );
+/** Re-opens the invitation after a page reload using the pass the visitor already earned. */
+export async function getSession(token, pass) {
+  if (!pass) throw new ApiError(401, 'Enter the meeting password to continue.', { code: 'PASS_REQUIRED' });
+  let payload;
+  try {
+    payload = verifyMeetingPass(pass);
+  } catch {
+    throw new ApiError(401, 'Your access has expired. Enter the password again.', { code: 'PASS_INVALID' });
+  }
+  const meeting = await findByToken(token);
+  assertEnabled(meeting);
+  if (String(meeting._id) !== payload.mid || (meeting.invite?.version || 1) !== payload.v) {
+    throw new ApiError(401, 'Your access has expired. Enter the password again.', { code: 'PASS_INVALID' });
+  }
+  const participant = await MeetingParticipant.findOne({ _id: payload.pid, meetingId: meeting._id });
+  if (!participant) throw new ApiError(401, 'Your access has expired. Enter the password again.', { code: 'PASS_INVALID' });
+  await MeetingParticipant.updateOne({ _id: participant._id }, { $set: { lastSeenAt: new Date() } });
+  return {
+    participant: {
+      id: String(participant._id),
+      name: participant.displayName,
+      role: participant.role,
+      isGuest: Boolean(participant.isGuest),
+      joinMethod: participant.joinMethod,
+    },
+    meeting: await fullDetails(meeting),
+  };
 }
 
-/** All invitations a user must act on, used to badge the Meetings nav. */
-export async function pendingInviteCount(user) {
-  return MeetingAttendance.countDocuments({
-    tenantId: user.tenantId,
-    userId: user.id,
-    response: 'pending',
-  });
+// ── video room (link joiners) ───────────────────────────────────────────
+
+/** Verifies a meeting pass and returns the meeting + the participant row it was issued to. */
+export async function authorizePass(token, pass) {
+  if (!pass) throw new ApiError(401, 'Enter the meeting password to continue.', { code: 'PASS_REQUIRED' });
+  let payload;
+  try {
+    payload = verifyMeetingPass(pass);
+  } catch {
+    throw new ApiError(401, 'Your access has expired. Enter the password again.', { code: 'PASS_INVALID' });
+  }
+  const meeting = await findByToken(token);
+  assertEnabled(meeting);
+  if (String(meeting._id) !== payload.mid || (meeting.invite?.version || 1) !== payload.v) {
+    throw new ApiError(401, 'Your access has expired. Enter the password again.', { code: 'PASS_INVALID' });
+  }
+  const participant = await MeetingParticipant.findOne({ _id: payload.pid, meetingId: meeting._id });
+  if (!participant) throw new ApiError(401, 'Your access has expired. Enter the password again.', { code: 'PASS_INVALID' });
+
+  // The organizer may tighten the access mode after someone already holds a pass: re-check it here.
+  const mode = meeting.invite?.accessMode || 'link';
+  if (mode !== 'link' && participant.isGuest) {
+    throw new ApiError(401, 'Sign in to LifeOS to join this meeting.', { code: 'LOGIN_REQUIRED' });
+  }
+  if (mode === 'restricted' && participant.userId) {
+    const isOrganizer = String(meeting.organizerId) === String(participant.userId);
+    const isListed = meeting.participants.some((p) => p.userId && String(p.userId) === String(participant.userId));
+    if (!isOrganizer && !isListed) throw new ApiError(403, "You don't have permission to join this meeting.", { code: 'NOT_INVITED' });
+  }
+  return { meeting, participant };
 }
 
-export { buildInviteUrl as inviteUrlFor, DEFAULT_LINK_TTL_DAYS };
+const isOrganizerRow = (meeting, participant) => Boolean(participant.userId && String(participant.userId) === String(meeting.organizerId));
+const whoOf = (participant) => ({ key: participant.key, ...(participant.userId ? { userId: participant.userId } : {}), name: participant.displayName });
+
+// ── recording (link joiners). Same rules as members; everything is saved on the ORGANIZER's meeting. ──
+
+export async function claimRecordingViaLink(token, pass) {
+  const { meeting, participant } = await authorizePass(token, pass);
+  assertRoomOpen(meeting);
+  return claimRecordingFor(meeting, whoOf(participant), isOrganizerRow(meeting, participant));
+}
+
+export async function releaseRecordingViaLink(token, pass) {
+  const { meeting, participant } = await authorizePass(token, pass);
+  return releaseRecordingFor(meeting, whoOf(participant));
+}
+
+export async function recordingBeatViaLink(token, pass, body) {
+  const { meeting, participant } = await authorizePass(token, pass);
+  return recordingBeatFor(meeting, whoOf(participant), body);
+}
+
+export async function uploadChunkViaLink(token, pass, index, buffer, contentType) {
+  const { meeting, participant } = await authorizePass(token, pass);
+  return storeChunk(meeting, whoOf(participant), isOrganizerRow(meeting, participant), index, buffer, contentType);
+}
+
+// ── chat (link joiners) ──
+
+export async function chatSendViaLink(token, pass, text) {
+  const { meeting, participant } = await authorizePass(token, pass);
+  return chat.sendMessage(meeting, { key: participant.key, name: participant.displayName }, text);
+}
+
+export async function chatListViaLink(token, pass, after) {
+  const { meeting } = await authorizePass(token, pass);
+  return chat.listMessages(meeting, after);
+}
+
+/** Pass → video room token. Guests get a guest identity; signed-in people keep their account identity. */
+export async function joinRoomViaLink(token, pass) {
+  ensureVideo();
+  const { meeting, participant } = await authorizePass(token, pass);
+  assertRoomOpen(meeting);
+  const isHost = isOrganizerRow(meeting, participant);
+  const identity = participant.key; // u:<userId> or g:<random>
+  const row = await markJoined(meeting, { key: participant.key });
+  const lk = mintMeetingRoomToken({ meetingId: meeting._id, identity, name: row.displayName, host: isHost });
+  const payload = buildRoomPayload(meeting, { token: lk, identity, participant: row, isHost });
+  // The internal meeting id is only needed by the organizer (to open the full host controls).
+  return isHost ? { ...payload, meetingId: String(meeting._id) } : payload;
+}
+
+export async function pingRoomViaLink(token, pass) {
+  const { meeting, participant } = await authorizePass(token, pass);
+  await MeetingParticipant.updateOne({ _id: participant._id, status: 'joined' }, { $set: { lastSeenAt: new Date() } });
+  return { status: meeting.status, ...recordingSnapshot(meeting, { key: participant.key, isHost: isOrganizerRow(meeting, participant) }) };
+}
+
+export async function leaveRoomViaLink(token, pass) {
+  const { participant } = await authorizePass(token, pass);
+  await MeetingParticipant.updateOne({ _id: participant._id, status: 'joined' }, { $set: { status: 'left', leftAt: new Date() } });
+  return { left: true };
+}

@@ -7,6 +7,8 @@ import { requirePermission } from '../middleware/requirePermission.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import { optDate } from '../utils/flex.js';
 
+import { cacheResponse } from '../utils/cache.js';
+
 const router = Router();
 
 const goalSchema = z.object({
@@ -32,7 +34,8 @@ const patchSchema = goalSchema.partial().extend({
   progress: z.coerce.number().min(0).max(100).optional(),
 });
 
-router.get('/', authenticate, requireTenant, requirePermission('goals.view'), goalController.listGoals);
+router.get('/', authenticate, requireTenant, requirePermission('goals.view'), cacheResponse(30), goalController.listGoals);
+router.get('/:id/overview', authenticate, requireTenant, requirePermission('goals.view'), goalController.goalOverview);
 router.post('/', authenticate, requireTenant, requirePermission('goals.create'), validateRequest(goalSchema), goalController.createGoal);
 router.patch('/:id', authenticate, requireTenant, requirePermission('goals.edit'), validateRequest(patchSchema), goalController.updateGoal);
 router.delete('/:id', authenticate, requireTenant, requirePermission('goals.delete'), goalController.removeGoal);

@@ -1,17 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  Play, Pause, RotateCcw, X, 
-  CheckCircle2, Clock, Calendar, Zap,
-  Settings2, Trophy
-} from 'lucide-react';
+import { Play, Pause, X, Settings2, Trophy } from 'lucide-react';
 import { useApi } from '../hooks/useApi.js';
 import api from '../api/client.js';
 import { formatApiError } from '../utils/errors.js';
 import { useToast } from '../context/ToastContext.jsx';
-import { 
-  Button, Card, Badge, Spinner, 
-  EmptyState, Input, StatCard 
-} from '../components/ui.jsx';
+import { Button, Card, Badge, Input, PageHeader, ConfirmDialog } from '../components/ui.jsx';
 import { formatDate } from '../utils/format.js';
 
 export default function FocusPage() {
@@ -22,6 +15,7 @@ export default function FocusPage() {
   const [customDurations, setCustomDurations] = useState({ focus: 25, short: 5, long: 15 });
   const { addToast } = useToast();
   const timerRef = useRef(null);
+  const [confirmAbandon, setConfirmAbandon] = useState(false);
 
   const { data: summary, reload: reloadSummary } = useApi('/focus/sessions/summary');
   const { data: history, reload: reloadHistory } = useApi('/focus/sessions');
@@ -98,7 +92,7 @@ export default function FocusPage() {
 
   const handleAbandon = async () => {
     if (!sessionId) return;
-    if (!confirm('Abandon this session?')) return;
+    setConfirmAbandon(false);
     try {
       await api.patch(`/focus/sessions/${sessionId}`, { action: 'abandon' });
       setIsActive(false);
@@ -117,128 +111,130 @@ export default function FocusPage() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-10">
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold dark:text-white">Focus Mode</h1>
-          <p className="text-sm text-slate-500 font-medium">Boost your productivity with deep work sessions</p>
-        </div>
-      </header>
+  const total = Math.max(1, customDurations[mode] * 60);
+  const R = 120;
+  const CIRC = 2 * Math.PI * R;
+  const remaining = Math.min(1, Math.max(0, timeLeft / total));
+  const started = timeLeft < total;
+  const historyItems = Array.isArray(history?.items) ? history.items : [];
+  const modeLabels = { focus: 'Focus', short: 'Short break', long: 'Long break' };
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Timer UI */}
-        <div className="lg:col-span-2 space-y-6">
-          <Card className="p-8 md:p-12 text-center relative overflow-hidden">
-            {/* Background Accent */}
-            <div className={`absolute top-0 left-0 w-full h-1 transition-all duration-1000 ${isActive ? 'bg-indigo-600' : 'bg-slate-200'}`} style={{ width: `${(timeLeft / (customDurations[mode] * 60)) * 100}%` }} />
-            
-            <div className="flex justify-center gap-2 mb-10">
+  return (
+    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8 pb-10">
+      <PageHeader title="Focus Mode" description="Boost your productivity with deep work sessions" />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+        <div className="lg:col-span-2 space-y-6 min-w-0">
+          <Card className="p-5 sm:p-10 text-center">
+            <div className="flex justify-center gap-1.5 p-1 mx-auto w-full max-w-sm rounded-full bg-slate-100 dark:bg-slate-800 mb-8" role="group" aria-label="Session type">
               {['focus', 'short', 'long'].map((m) => (
                 <button
                   key={m}
                   disabled={isActive}
+                  aria-pressed={mode === m}
                   onClick={() => resetTimer(m)}
-                  className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${mode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 disabled:opacity-50'}`}
+                  className={`flex-1 min-h-10 px-3 rounded-full text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 disabled:cursor-not-allowed ${mode === m ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 disabled:opacity-50'}`}
                 >
-                  {m}
+                  {modeLabels[m]}
                 </button>
               ))}
             </div>
 
-            <div className="mb-10 min-w-0">
-              <span className="text-7xl sm:text-8xl md:text-9xl font-black tabular-nums dark:text-white transition-all tracking-tighter block truncate">
-                {formatTime(timeLeft)}
-              </span>
+            <div className="relative mx-auto w-full max-w-[17rem] sm:max-w-[20rem] aspect-square mb-8" role="timer" aria-label={`${modeLabels[mode]} timer`}>
+              <svg viewBox="0 0 260 260" className="absolute inset-0 w-full h-full -rotate-90" aria-hidden="true">
+                <circle cx="130" cy="130" r={R} fill="none" strokeWidth="10" className="stroke-slate-100 dark:stroke-slate-800" />
+                <circle
+                  cx="130" cy="130" r={R} fill="none" strokeWidth="10" strokeLinecap="round"
+                  className={`${isActive ? 'stroke-indigo-500' : 'stroke-indigo-300 dark:stroke-indigo-700'} transition-[stroke-dashoffset] duration-1000 ease-linear`}
+                  strokeDasharray={CIRC}
+                  strokeDashoffset={CIRC * (1 - remaining)}
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-5xl sm:text-6xl font-black tabular-nums tracking-tight text-slate-900 dark:text-white">{formatTime(timeLeft)}</span>
+                <span className="mt-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{isActive ? 'In progress' : started ? 'Paused' : 'Ready'}</span>
+              </div>
             </div>
 
-            <div className="flex flex-wrap justify-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:justify-center gap-3">
               {!isActive ? (
-                timeLeft < customDurations[mode] * 60 ? (
+                started ? (
                   <>
-                    <Button size="lg" icon={Play} onClick={handleResume} className="px-10 rounded-2xl shadow-lg shadow-indigo-500/20">Resume</Button>
-                    <Button size="lg" variant="secondary" icon={X} onClick={handleAbandon} className="px-10 rounded-2xl">Abandon</Button>
+                    <Button size="lg" icon={Play} onClick={handleResume} className="sm:px-10">Resume</Button>
+                    <Button size="lg" variant="secondary" icon={X} onClick={() => setConfirmAbandon(true)} className="sm:px-10">Abandon</Button>
                   </>
                 ) : (
-                  <Button size="lg" icon={Play} onClick={handleStart} className="px-12 rounded-2xl shadow-lg shadow-indigo-500/20">Start Focus</Button>
+                  <Button size="lg" icon={Play} onClick={handleStart} className="sm:px-12">Start {modeLabels[mode]}</Button>
                 )
               ) : (
                 <>
-                  <Button size="lg" variant="secondary" icon={Pause} onClick={handlePause} className="px-10 rounded-2xl">Pause</Button>
-                  <Button size="lg" variant="danger" icon={X} onClick={handleAbandon} className="px-10 rounded-2xl shadow-lg shadow-red-500/20">Abandon</Button>
+                  <Button size="lg" variant="secondary" icon={Pause} onClick={handlePause} className="sm:px-10">Pause</Button>
+                  <Button size="lg" variant="danger" icon={X} onClick={() => setConfirmAbandon(true)} className="sm:px-10">Abandon</Button>
                 </>
               )}
             </div>
           </Card>
 
-          <Card className="p-6">
-            <h3 className="font-bold dark:text-white mb-6 flex items-center gap-2">
-              <Settings2 className="w-4 h-4 text-slate-400" /> Timer Settings
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <Input 
-                label="Focus (min)" 
-                type="number" 
-                value={customDurations.focus} 
-                disabled={isActive}
-                onChange={(e) => setCustomDurations({ ...customDurations, focus: parseInt(e.target.value) || 1 })} 
-              />
-              <Input 
-                label="Short (min)" 
-                type="number" 
-                value={customDurations.short} 
-                disabled={isActive}
-                onChange={(e) => setCustomDurations({ ...customDurations, short: parseInt(e.target.value) || 1 })} 
-              />
-              <Input 
-                label="Long (min)" 
-                type="number" 
-                value={customDurations.long} 
-                disabled={isActive}
-                onChange={(e) => setCustomDurations({ ...customDurations, long: parseInt(e.target.value) || 1 })} 
-              />
+          <Card className="p-5 sm:p-6">
+            <h2 className="font-bold text-slate-900 dark:text-white mb-5 flex items-center gap-2">
+              <Settings2 className="w-4 h-4 text-slate-400" aria-hidden="true" /> Timer Settings
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+              <Input label="Focus (min)" type="number" inputMode="numeric" min={1} value={customDurations.focus} disabled={isActive}
+                onChange={(e) => setCustomDurations({ ...customDurations, focus: parseInt(e.target.value) || 1 })} />
+              <Input label="Short break (min)" type="number" inputMode="numeric" min={1} value={customDurations.short} disabled={isActive}
+                onChange={(e) => setCustomDurations({ ...customDurations, short: parseInt(e.target.value) || 1 })} />
+              <Input label="Long break (min)" type="number" inputMode="numeric" min={1} value={customDurations.long} disabled={isActive}
+                onChange={(e) => setCustomDurations({ ...customDurations, long: parseInt(e.target.value) || 1 })} />
             </div>
-            {!isActive && <p className="text-[10px] text-slate-400 mt-4 uppercase font-bold tracking-widest">Changes will apply after current session</p>}
+            {!isActive && <p className="text-xs text-slate-400 mt-4">Changes apply to the next session.</p>}
           </Card>
         </div>
 
-        {/* Stats & History */}
-        <div className="space-y-6">
-          <Card className="p-6 bg-indigo-600 text-white border-none shadow-xl shadow-indigo-500/20">
+        <div className="space-y-6 min-w-0">
+          <Card className="p-5 sm:p-6 bg-gradient-to-br from-indigo-600 to-fuchsia-600 text-white border-none shadow-lg shadow-indigo-500/20">
             <div className="flex items-center justify-between mb-4">
-              <Trophy className="w-8 h-8 opacity-50" />
-              <Badge variant="warning" className="bg-white/20 border-white/30 text-white">Daily Goal</Badge>
+              <Trophy className="w-8 h-8 opacity-60" aria-hidden="true" />
+              <span className="text-[11px] font-bold uppercase tracking-wider rounded-full bg-white/20 px-2.5 py-1">Daily goal</span>
             </div>
-            <p className="text-sm font-bold opacity-80 uppercase tracking-widest mb-1">Total Focus Today</p>
-            <h3 className="text-4xl font-black mb-4">{summary?.totalMinutesToday || 0} <span className="text-sm font-medium opacity-60">mins</span></h3>
-            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-white transition-all duration-1000" style={{ width: `${Math.min((summary?.totalMinutesToday || 0) / 120 * 100, 100)}%` }} />
+            <p className="text-xs font-semibold opacity-80 uppercase tracking-wider mb-1">Total focus today</p>
+            <p className="text-4xl font-black mb-4 tabular-nums">{summary?.totalMinutesToday || 0} <span className="text-sm font-medium opacity-70">mins</span></p>
+            <div className="w-full h-2 bg-white/20 rounded-full overflow-hidden" role="progressbar" aria-label="Daily focus goal" aria-valuemin={0} aria-valuemax={120} aria-valuenow={Math.min(summary?.totalMinutesToday || 0, 120)}>
+              <div className="h-full bg-white rounded-full transition-[width] duration-700" style={{ width: `${Math.min((summary?.totalMinutesToday || 0) / 120 * 100, 100)}%` }} />
             </div>
-            <p className="text-[10px] mt-2 opacity-60">Target: 2 hours (120 mins)</p>
+            <p className="text-xs mt-2 opacity-70">Target: 2 hours (120 mins)</p>
           </Card>
 
-          <Card className="p-6">
-            <h3 className="font-bold dark:text-white mb-4">Recent Sessions</h3>
-            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-              {history?.items?.length > 0 ? (
-                history.items.map((session) => (
-                  <div key={session._id} className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 last:border-0">
-                    <div>
-                      <p className="text-sm font-bold dark:text-white capitalize">{session.type} Session</p>
-                      <p className="text-[10px] text-slate-500 font-medium uppercase">{formatDate(session.startTime, 'MMM d')} • {session.durationMin}m</p>
+          <Card className="p-5 sm:p-6">
+            <h2 className="font-bold text-slate-900 dark:text-white mb-4">Recent Sessions</h2>
+            {historyItems.length > 0 ? (
+              <ul className="max-h-[400px] overflow-y-auto pr-1 divide-y divide-slate-100 dark:divide-slate-800">
+                {historyItems.map((session) => (
+                  <li key={session._id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white capitalize truncate">{String(session.type || 'focus').replace(/_/g, ' ')} session</p>
+                      <p className="text-xs text-slate-500">{formatDate(session.startTime, 'MMM d')} · {session.durationMin}m</p>
                     </div>
-                    <Badge variant={session.status === 'completed' ? 'success' : 'error'} className="text-[8px]">
-                      {session.status}
-                    </Badge>
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-slate-500 text-center py-6">No sessions yet.</p>
-              )}
-            </div>
+                    <Badge variant={session.status === 'completed' ? 'success' : 'error'} className="text-[10px] capitalize flex-shrink-0">{session.status}</Badge>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500 text-center py-6">No sessions yet. Start your first one.</p>
+            )}
           </Card>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmAbandon}
+        title="Abandon this session?"
+        description="Your progress for this session won't count toward today's total."
+        confirmLabel="Abandon session"
+        danger
+        onConfirm={handleAbandon}
+        onClose={() => setConfirmAbandon(false)}
+      />
     </div>
   );
 }
