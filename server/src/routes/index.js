@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import deviceLinkRoutes from './deviceLink.routes.js';
 import idempotency from '../middleware/idempotency.js';
 import healthRoutes from './health.routes.js';
 import authRoutes from './auth.routes.js';
@@ -36,6 +37,8 @@ const router = Router();
 router.use(idempotency);
 
 router.use('/health', healthRoutes);
+// Sign in with QR + linked devices. Before /auth, so the 2-second checks do not use up the password limit.
+router.use('/auth/link', deviceLinkRoutes);
 router.use('/auth', authRoutes);
 router.use('/push', pushRoutes);
 router.use('/tenants', tenantRoutes);

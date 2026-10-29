@@ -73,29 +73,45 @@ export const termsToRegex = (terms) => terms.map((t) => new RegExp(escRe(t), 'i'
 
 // ─────────────────────────────── request schemas ───────────────────────────────
 const idStr = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid id');
-export const areaSchema = z.object({
+const areaFields = {
   name: z.string().trim().min(1).max(40),
-  targetMinutes: z.number().int().min(0).max(LIMITS.maxTarget).optional().default(0),
+  targetMinutes: z.number().int().min(0).max(LIMITS.maxTarget),
   // Where this area also gets time from, automatically. Both are chosen by the person.
-  taskCategories: z.array(z.string().trim().min(1).max(40)).max(10).optional().default([]),
-  eventTypes: z.array(z.enum(EVENT_TYPES)).max(8).optional().default([]),
+  taskCategories: z.array(z.string().trim().min(1).max(40)).max(10),
+  eventTypes: z.array(z.enum(EVENT_TYPES)).max(8),
+};
+export const areaSchema = z.object({
+  name: areaFields.name,
+  targetMinutes: areaFields.targetMinutes.optional().default(0),
+  taskCategories: areaFields.taskCategories.optional().default([]),
+  eventTypes: areaFields.eventTypes.optional().default([]),
 });
-export const areaPatchSchema = areaSchema.partial().refine((v) => Object.keys(v).length > 0, 'Nothing to change');
+// The edit schema has NO defaults, so a change to one field never resets the others.
+export const areaPatchSchema = z.object(areaFields).partial().refine((v) => Object.keys(v).length > 0, 'Nothing to change');
 export const logSchema = z.object({
   areaId: idStr,
   minutes: z.number().int().min(1).max(LIMITS.maxMinutes),
   date: z.string().refine(isDateStr, 'Use a date like 2026-10-15'),
   note: z.string().trim().max(LIMITS.note).optional().default(''),
 });
-export const entrySchema = z.object({
+const entryFields = {
   kind: z.enum(KINDS),
   title: z.string().trim().min(1).max(LIMITS.title),
-  body: z.string().trim().max(LIMITS.body).optional().default(''),
-  url: z.string().trim().max(LIMITS.url).optional().default(''),
-  tags: z.array(z.string()).max(20).optional().default([]),
-  pinned: z.boolean().optional().default(false),
+  body: z.string().trim().max(LIMITS.body),
+  url: z.string().trim().max(LIMITS.url),
+  tags: z.array(z.string()).max(20),
+  pinned: z.boolean(),
+};
+export const entrySchema = z.object({
+  kind: entryFields.kind,
+  title: entryFields.title,
+  body: entryFields.body.optional().default(''),
+  url: entryFields.url.optional().default(''),
+  tags: entryFields.tags.optional().default([]),
+  pinned: entryFields.pinned.optional().default(false),
 });
-export const entryPatchSchema = entrySchema.partial().refine((v) => Object.keys(v).length > 0, 'Nothing to change');
+// The edit schema has NO defaults, so a change to one field never resets the others.
+export const entryPatchSchema = z.object(entryFields).partial().refine((v) => Object.keys(v).length > 0, 'Nothing to change');
 export const settingsSchema = z.object({ reminder: z.boolean() });
 
 // ─────────────────────────────── Life Balance maths ───────────────────────────────

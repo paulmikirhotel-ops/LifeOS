@@ -8,6 +8,7 @@ import {
   LogOut, User, Menu, X, Wallet, Heart,
   Sun, Moon, ChevronDown, Check, MoreHorizontal, Video, MessagesSquare
 } from 'lucide-react';
+import { QrCode } from 'lucide-react';
 import { Scale } from 'lucide-react';
 import { WifiOff } from 'lucide-react';
 import OfflineBanner from '../components/offline/OfflineBanner.jsx';
@@ -79,6 +80,7 @@ function AppLayoutInner() {
     { label: 'Goals', icon: Target, path: '/goals', permission: 'goals.view' },
     { label: 'Opportunities', icon: Radar, path: '/radar', permission: 'goals.view' },
     { label: 'My life', icon: Scale, path: '/life', permission: 'goals.view' },
+    { label: 'Link a device', icon: QrCode, path: '/link', permission: 'goals.view' },
     { label: 'NextStep', icon: Compass, path: '/nextstep', permission: 'goals.view' },
     { label: 'Assistant', icon: Sparkles, path: '/assistant', permission: '*' },
     { label: 'Analytics', icon: PieChart, path: '/analytics', permission: 'analytics.view' },

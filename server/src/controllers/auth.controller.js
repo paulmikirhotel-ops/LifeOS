@@ -1,21 +1,22 @@
 import * as authService from '../services/auth.service.js';
 import { setAuthCookies, clearAuthCookies, REFRESH_COOKIE } from '../utils/token.js';
+import { deviceFrom } from '../services/session.service.js';
 
 export async function register(req, res) {
   const { user } = await authService.register(req.body);
-  const session = await authService.startSession(user);
+  const session = await authService.startSession(user, { ...deviceFrom(req), via: 'register' });
   setAuthCookies(res, session.accessToken, session.refreshToken);
   res.status(201).json({ success: true, data: { user: session.user, memberships: session.memberships } });
 }
 
 export async function login(req, res) {
-  const session = await authService.login(req.body);
+  const session = await authService.login(req.body, deviceFrom(req));
   setAuthCookies(res, session.accessToken, session.refreshToken);
   res.json({ success: true, data: { user: session.user, memberships: session.memberships } });
 }
 
 export async function logout(req, res) {
-  await authService.logout(req.user.id);
+  await authService.logout(req.user.id, req.cookies?.[REFRESH_COOKIE]);
   clearAuthCookies(res);
   res.json({ success: true, data: { message: 'Logged out' } });
 }

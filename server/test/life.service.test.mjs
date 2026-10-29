@@ -3,11 +3,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lifesvc-'));
-const src = path.resolve(new URL('../src', import.meta.url).pathname);
+const src = path.resolve(fileURLToPath(new URL('../src', import.meta.url)));
 const w = (rel, text) => { const f = path.join(root, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); };
 // copy the real logic and service, stub everything they import
 for (const rel of ['utils/life.logic.js', 'services/life.service.js']) w(`src/${rel}`, fs.readFileSync(path.join(src, rel), 'utf8'));

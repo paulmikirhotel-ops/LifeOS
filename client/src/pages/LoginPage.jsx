@@ -79,6 +79,7 @@ export default function LoginPage() {
           Sign In
         </Button>
       </form>
+      <p className="mt-4 text-center text-sm"><Link to="/login/qr" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Sign in with QR code (use your phone)</Link></p>
 
       <p className="text-center text-sm text-slate-500">
         Don't have an account?{' '}

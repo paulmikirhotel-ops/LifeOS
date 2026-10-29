@@ -7,6 +7,8 @@ import { Spinner } from '../components/ui.jsx';
 
 // Auth Pages
 const LoginPage = lazy(() => import('../pages/LoginPage.jsx'));
+const QrSignInPage = lazy(() => import('../pages/QrSignInPage.jsx'));
+const LinkDevicePage = lazy(() => import('../pages/LinkDevicePage.jsx'));
 const RegisterPage = lazy(() => import('../pages/RegisterPage.jsx'));
 const ForgotPasswordPage = lazy(() => import('../pages/ForgotPasswordPage.jsx'));
 const ResetPasswordPage = lazy(() => import('../pages/ResetPasswordPage.jsx'));
@@ -78,6 +80,7 @@ export default function AppRoutes() {
         {/* Public Routes */}
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/login/qr" element={<QrSignInPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
@@ -141,6 +144,8 @@ export default function AppRoutes() {
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/link" element={<LinkDevicePage />} />
+          <Route path="/link/:code" element={<LinkDevicePage />} />
         </Route>
 
         {/* Catch-all */}

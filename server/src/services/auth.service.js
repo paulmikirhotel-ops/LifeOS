@@ -6,6 +6,7 @@ import { generateToken, hashToken, signAccessToken, signRefreshToken } from '../
 import { sendMail } from '../utils/mailer.js';
 import { env } from '../config/env.js';
 import { removeAllForUser as removePush } from './push.service.js';
+import { openSession, rotateSession, closeSession, revokeAllSessions } from './session.service.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -134,12 +135,8 @@ export async function register({ name, email, password, tenantType, organization
 }
 
 /** Mints a fresh token pair for an existing user (login + register). */
-export async function startSession(user) {
-  const refreshToken = signRefreshToken({ sub: user._id.toString(), type: 'refresh' });
-  user.refreshTokenHash = hashToken(refreshToken);
-  user.refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  await user.save();
-  const accessToken = signAccessToken({ sub: user._id.toString(), type: 'access' });
+export async function startSession(user, ctx = {}) {
+  const { accessToken, refreshToken } = await openSession(user, ctx);
   return {
     user: publicUser(user),
     memberships: await buildMembershipList(user._id),
@@ -148,7 +145,7 @@ export async function startSession(user) {
   };
 }
 
-export async function login({ email, password }) {
+export async function login({ email, password }, ctx = {}) {
   const user = await User.findOne({ email }).select('+passwordHash');
   if (!user || user.status === 'deleted') throw ApiError.unauthorized('Invalid email or password');
   if (user.status === 'suspended') throw ApiError.forbidden('Account suspended');
@@ -158,29 +155,19 @@ export async function login({ email, password }) {
 
   user.lastLoginAt = new Date();
   await user.save();
-  return startSession(user);
+  return startSession(user, ctx);
 }
 
 export async function refreshSession(refreshToken) {
-  if (!refreshToken) throw ApiError.unauthorized('No refresh token');
-  const user = await User.findOne({ refreshTokenHash: hashToken(refreshToken) }).select('+refreshTokenHash');
-  if (!user || user.status !== 'active') throw ApiError.unauthorized('Session invalid');
-  if (!user.refreshTokenExpiresAt || user.refreshTokenExpiresAt < new Date()) {
-    throw ApiError.unauthorized('Session expired');
-  }
-
-  // Rotation: issue a new refresh token and replace the stored hash.
-  const newRefresh = signRefreshToken({ sub: user._id.toString(), type: 'refresh' });
-  user.refreshTokenHash = hashToken(newRefresh);
-  user.refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  await user.save();
-
-  const accessToken = signAccessToken({ sub: user._id.toString(), type: 'access' });
-  return { user: publicUser(user), memberships: await buildMembershipList(user._id), accessToken, refreshToken: newRefresh };
+  // Only THIS device's token is replaced; other devices stay signed in.
+  const { user, accessToken, refreshToken: next } = await rotateSession(refreshToken);
+  return { user: publicUser(user), memberships: await buildMembershipList(user._id), accessToken, refreshToken: next };
 }
 
-export async function logout(userId) {
-  await removePush(userId);
+export async function logout(userId, refreshToken) {
+  // Signs out this device only. Push alerts are switched off only when no device is left.
+  const left = await closeSession(userId, refreshToken);
+  if (left === 0) await removePush(userId);
   await User.updateOne({ _id: userId }, { $unset: { refreshTokenHash: 1, refreshTokenExpiresAt: 1 } });
 }
 
@@ -202,6 +189,7 @@ export async function changePassword(userId, { currentPassword, newPassword }) {
   user.passwordHash = await bcrypt.hash(newPassword, 12);
   user.refreshTokenHash = undefined;
   await user.save();
+  await revokeAllSessions(user._id);
 }
 
 export async function forgotPassword(email) {
@@ -230,6 +218,7 @@ export async function resetPassword(token, newPassword) {
   user.passwordResetExpiresAt = undefined;
   user.refreshTokenHash = undefined;
   await user.save();
+  await revokeAllSessions(user._id);
 }
 
 export async function verifyEmail(token) {
@@ -272,5 +261,6 @@ export async function deleteAccount(userId) {
     }
   );
   await Membership.updateMany({ userId }, { status: 'left' });
+  await revokeAllSessions(userId);
   await Tenant.updateMany({ ownerUserId: userId, type: 'personal' }, { status: 'suspended' });
 }
