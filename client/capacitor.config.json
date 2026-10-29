@@ -1,0 +1,14 @@
+{
+  "appId": "com.lifeos.app",
+  "appName": "LifeOS",
+  "webDir": "mobile-www",
+  "server": {
+    "url": "https://lifepilot-os.netlify.app",
+    "errorPath": "offline.html",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "appendUserAgent": "LifeOSApp/1.0"
+  }
+}
