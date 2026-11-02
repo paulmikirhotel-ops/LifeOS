@@ -1,5 +1,5 @@
 import * as svc from '../services/deviceLink.service.js';
-import { listDevices, removeDevice, deviceFrom } from '../services/session.service.js';
+import { listDevices, removeDevice, deviceFrom, setPushToken, clearPushToken } from '../services/session.service.js';
 import { setAuthCookies, REFRESH_COOKIE } from '../utils/token.js';
 
 const ok = (res, data, status = 200) => res.status(status).json({ success: true, data });
@@ -26,3 +26,5 @@ export const approve = async (req, res) => ok(res, await svc.approve(req.user, r
 export const deny = async (req, res) => ok(res, await svc.deny(req.user, req.body));
 export const devices = async (req, res) => ok(res, await listDevices(req.user.id, req.cookies?.[REFRESH_COOKIE]));
 export const removeOne = async (req, res) => ok(res, await removeDevice(req.user.id, req.params.id));
+export const registerPush = async (req, res) => ok(res, await setPushToken(req.user.id, req.cookies?.[REFRESH_COOKIE], req.body.token));
+export const unregisterPush = async (req, res) => ok(res, await clearPushToken(req.user.id, req.cookies?.[REFRESH_COOKIE]));

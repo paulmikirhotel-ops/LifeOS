@@ -7,6 +7,7 @@ import { loadConversation, assertCanWrite } from './connect.service.js';
 import { livekitConfigured, mintMeetingRoomToken, publicLivekitUrl, roomNameFor } from '../utils/livekit.js';
 import { RING_MS, STALE_MS, MAX_ON_CALL, callLogText, shouldEnd, allDeclined, isRingExpired } from '../utils/callLogic.js';
 import { pushToUser } from './push.service.js';
+import { sendCallPush } from './fcm.service.js';
 
 /**
  * Voice and video calls in Connect chats.
@@ -151,6 +152,8 @@ export async function startCall(me, conversationId, mode = 'voice') {
   const dto = toDto(call, conv, callerName);
   tell(conv, { kind: 'call', event: 'incoming', call: dto, from: { id: String(me), name: callerName } }, me);
   membersOf(conv).filter((m) => m !== String(me)).forEach((m) => pushToUser(m, { title: `${callerName} is calling`, body: call.mode === 'video' ? 'Incoming video call' : 'Incoming voice call', url: '/connect', tag: `call-${call._id}`, urgent: true }));
+  // The Android app, even when it is closed.
+  membersOf(conv).filter((m) => m !== String(me)).forEach((m) => { sendCallPush(m, { title: `${callerName} is calling`, body: call.mode === 'video' ? 'Incoming video call' : 'Incoming voice call', callId: String(call._id) }); });
   // Stop ringing even if nobody's browser tells us (the 15 s sweep also covers a restart).
   setTimeout(() => ConnectCall.findById(call._id).then((c) => c && settle(c, conv)).catch(() => {}), RING_MS + 1000).unref?.();
   return { call: dto, alreadyRunning: false };

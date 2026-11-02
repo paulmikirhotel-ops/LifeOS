@@ -16,7 +16,8 @@ import { HandHeart } from 'lucide-react';
 import { Radar } from 'lucide-react';
 import { Sparkles } from 'lucide-react';
 import { Compass } from 'lucide-react';
-import { useAuth } from '../context/AuthContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { useNativePush } from '../hooks/useNativePush.js';
 import { useTenant } from '../context/TenantContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
 import { NotificationProvider, useNotification } from '../context/NotificationContext.jsx';
@@ -39,6 +40,7 @@ export default function AppLayout() {
 
 function AppLayoutInner() {
   const { user, logout, memberships } = useAuth();
+  useNativePush(user); // Android app: register this phone for call alerts
   const { activeTenant, switchTenant, can } = useTenant();
   const { theme, toggleTheme } = useTheme();
   const { unread: unreadCount, panelOpen, setPanelOpen } = useNotification();

@@ -121,3 +121,33 @@ export async function removeDevice(userId, id) {
   if (!r.deletedCount) throw ApiError.notFound('Device not found');
   return { removed: true };
 }
+
+/** The Android app tells us its push address. It is kept on THIS device's session, so signing out (or removing the device) ends it. */
+export async function setPushToken(userId, refreshToken, token) {
+  const t = String(token || '').trim();
+  if (t.length < 20 || t.length > 400) throw ApiError.badRequest('Invalid push token');
+  if (!refreshToken) throw ApiError.badRequest('Sign in again, then retry');
+  const hash = hashToken(refreshToken);
+  const own = await UserSession.findOne({ userId, refreshHash: hash });
+  if (!own) throw ApiError.unauthorized('Session invalid');
+  // A phone belongs to one sign-in at a time: if the same address was on another account or device, it moves here.
+  await UserSession.updateMany({ pushToken: t, _id: { $ne: own._id } }, { $set: { pushToken: '' } });
+  await UserSession.updateOne({ _id: own._id }, { $set: { pushToken: t } });
+  return { registered: true };
+}
+
+export async function clearPushToken(userId, refreshToken) {
+  if (refreshToken) await UserSession.updateOne({ userId, refreshHash: hashToken(refreshToken) }, { $set: { pushToken: '' } });
+  return { cleared: true };
+}
+
+/** Push addresses of every signed-in phone of this person. */
+export async function pushTokensFor(userId) {
+  const rows = await UserSession.find({ userId, pushToken: { $ne: '' }, expiresAt: { $gt: new Date() } }).lean();
+  return [...new Set(rows.map((r) => r.pushToken).filter(Boolean))];
+}
+
+/** A push address Google said is dead: forget it everywhere. */
+export async function dropPushToken(token) {
+  await UserSession.updateMany({ pushToken: token }, { $set: { pushToken: '' } });
+}

@@ -92,3 +92,4 @@ export const targetSchema = z
   .object({ code: hex48.optional(), ref: objectId.optional() })
   .refine((v) => Boolean(v.code) !== Boolean(v.ref), { message: 'Send either code or ref' });
 export const idParamSchema = z.object({ id: objectId });
+export const pushTokenSchema = z.object({ token: z.string().trim().min(20).max(400) });

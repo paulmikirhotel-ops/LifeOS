@@ -16,7 +16,9 @@ const userSessionSchema = new Schema({
   lastUsedAt: { type: Date, default: Date.now },
   device: { type: deviceSchema, default: () => ({}) },
   via: { type: String, enum: ['password', 'register', 'qr'], default: 'password' },
+  pushToken: { type: String, default: '', maxlength: 400 }, // the phone's push address (Android app only); gone when the device signs out
 }, { timestamps: true });
+userSessionSchema.index({ userId: 1, pushToken: 1 });
 userSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // expired sessions clean themselves up
 
 /** One QR sign-in attempt, started on a computer and (maybe) approved on a phone. */

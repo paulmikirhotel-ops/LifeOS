@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import * as c from '../controllers/deviceLink.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { validateRequest } from '../middleware/validateRequest.js';
-import { statusSchema, codeSchema, pairSchema, targetSchema, idParamSchema } from '../utils/deviceLink.logic.js';
+import { statusSchema, codeSchema, pairSchema, targetSchema, idParamSchema, pushTokenSchema } from '../utils/deviceLink.logic.js';
 
 /**
  * /api/auth/link/...   Sign in with QR, and the list of devices signed in as me.
@@ -33,6 +33,8 @@ router.post('/peek', validateRequest(codeSchema), c.peek);
 router.post('/lookup', typing, validateRequest(pairSchema), c.lookup);
 router.post('/approve', validateRequest(targetSchema), c.approve);
 router.post('/deny', validateRequest(targetSchema), c.deny);
+router.post('/push-token', validateRequest(pushTokenSchema), c.registerPush);
+router.delete('/push-token', c.unregisterPush);
 router.get('/devices', c.devices);
 router.delete('/devices/:id', validateRequest(idParamSchema, 'params'), c.removeOne);
 
