@@ -13,7 +13,7 @@ test('a tapped call alert opens only pages inside the app', () => {
   assert.equal(targetFromNotification(undefined), '/connect');
 });
 test('the calls channel is loud and public', () => {
-  assert.equal(CALL_CHANNEL.id, 'calls'); assert.equal(CALL_CHANNEL.importance, 5); assert.equal(CALL_CHANNEL.visibility, 1); assert.equal(CALL_CHANNEL.vibration, true);
+  assert.equal(CALL_CHANNEL.id, 'calls_ring'); assert.equal(CALL_CHANNEL.importance, 5); assert.equal(CALL_CHANNEL.visibility, 1); assert.equal(CALL_CHANNEL.vibration, true);
 });
 test('only the Android app counts as native', () => {
   assert.equal(isNativeApp(undefined), false);

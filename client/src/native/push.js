@@ -6,9 +6,9 @@ export function targetFromNotification(data) {
   return /^\/[A-Za-z0-9\-_/]*$/.test(u) && !u.startsWith('//') ? u : '/connect';
 }
 
-/** The channel Android uses for call alerts: loud, shows on the lock screen, vibrates. */
+/** The channel Android uses for call alerts: loud, shows on the lock screen, vibrates. The app's MainActivity creates it first, with the phone's own ringtone. */
 export const CALL_CHANNEL = Object.freeze({
-  id: 'calls',
+  id: 'calls_ring',
   name: 'Calls',
   description: 'Incoming LifeOS calls',
   importance: 5,

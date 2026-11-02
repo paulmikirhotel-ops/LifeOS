@@ -45,7 +45,7 @@ export async function accessToken(acct, { fetchFn = fetch, now = Date.now() } = 
 }
 export const resetTokenCache = () => { cached = { token: '', until: 0, email: '' }; };
 
-/** The message for one phone. High priority, 30 seconds to live (a call that rang out is no use later), in the "calls" channel. */
+/** The message for one phone. High priority, 30 seconds to live (a call that rang out is no use later), in the "calls_ring" channel. */
 export function buildMessage(token, { title, body, callId, url = '/connect' }) {
   return {
     message: {
@@ -56,7 +56,7 @@ export function buildMessage(token, { title, body, callId, url = '/connect' }) {
         priority: 'HIGH',
         ttl: '30s',
         collapse_key: `call-${callId || 'x'}`,
-        notification: { channel_id: 'calls', sound: 'default', tag: `call-${callId || 'x'}`, default_vibrate_timings: true, notification_priority: 'PRIORITY_MAX', visibility: 'PUBLIC' },
+        notification: { channel_id: 'calls_ring', sound: 'default', tag: `call-${callId || 'x'}`, default_vibrate_timings: true, notification_priority: 'PRIORITY_MAX', visibility: 'PUBLIC' },
       },
     },
   };

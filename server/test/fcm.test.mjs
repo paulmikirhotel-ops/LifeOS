@@ -102,7 +102,7 @@ test('the message is high priority, short-lived, in the calls channel, and carri
   assert.equal(m.token, 'tok');
   assert.equal(m.android.priority, 'HIGH');
   assert.equal(m.android.ttl, '30s');
-  assert.equal(m.android.notification.channel_id, 'calls');
+  assert.equal(m.android.notification.channel_id, 'calls_ring');
   assert.deepEqual(m.data, { url: '/connect', type: 'call', callId: 'c1' });
   assert.equal(m.notification.title, 'Ann is calling');
 });
