@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { registerPlugin } from '@capacitor/core';
 import { isNativeApp } from './push.js';
 import { normalizeState } from './audioRoute.js';
@@ -7,12 +7,14 @@ let plugin;
 const getPlugin = () => { if (!plugin) plugin = registerPlugin('AudioRoute'); return plugin; };
 
 /**
- * Inside the Android app only. While `active` (a call is connected) the sound goes to the loudspeaker, or to Bluetooth / a headset
+ * Inside the Android app only. While `active` (a call is connected) the sound goes to the earpiece (voice call) or loudspeaker (video call), or to Bluetooth / a headset
  * when one is connected, and follows Bluetooth or a headset being connected or removed. Everywhere else, or with an older app
  * that does not have the native part yet, `supported` stays false and nothing is shown.
  */
-export function useAudioRoute(active) {
+export function useAudioRoute(active, { video = false } = {}) {
   const [state, setState] = useState(null);
+  const videoRef = useRef(video); // read once when the call starts: voice calls begin on the earpiece, video calls on the loudspeaker
+  videoRef.current = video;
   const native = isNativeApp();
 
   useEffect(() => {
@@ -23,7 +25,7 @@ export function useAudioRoute(active) {
       try {
         const p = getPlugin();
         handle = await p.addListener('routeChanged', (s) => { if (!stopped) setState(normalizeState(s)); });
-        const s = await p.start();
+        const s = await p.start({ video: videoRef.current });
         if (!stopped && s && s.route) setState(normalizeState(s));
       } catch { /* the app was built without the audio piece: no button, the call still works */ }
     })();

@@ -73,7 +73,7 @@ for (const crlf of [false, true]) {
     const main = read(d, 'android/app/src/main/java/com/lifeos/app/MainActivity.java');
     assert.ok(main.indexOf('registerPlugin(AudioRoutePlugin.class)') < main.indexOf('super.onCreate'));
     const plugin = read(d, 'android/app/src/main/java/com/lifeos/app/AudioRoutePlugin.java');
-    assert.ok(plugin.startsWith('package com.lifeos.app;') && !plugin.includes('__PACKAGE__'));
+    assert.ok(plugin.includes('package com.lifeos.app;') && !plugin.includes('__PACKAGE__'));
     assert.match(read(d, 'android/app/src/main/AndroidManifest.xml'), /BLUETOOTH_CONNECT/);
     const call = read(d, 'src/components/connect/call/CallScreen.jsx');
     assert.match(call, /<AudioRouteControl audio=\{audio\} variant="round"/);

@@ -1,3 +1,4 @@
+// audio-route v2 (voice starts on the earpiece, video on the loudspeaker)
 package __PACKAGE__;
 
 import android.Manifest;
@@ -32,6 +33,8 @@ import java.util.List;
 public class AudioRoutePlugin extends Plugin {
   private AudioManager audio;
   private boolean active = false;
+  /** Where the call sound returns to when Bluetooth or a headset goes away: earpiece for voice calls, loudspeaker for video calls. */
+  private String home = "earpiece";
   private AudioDeviceCallback callback;
   private final Handler main = new Handler(Looper.getMainLooper());
 
@@ -149,6 +152,7 @@ public class AudioRoutePlugin extends Plugin {
 
   private void begin(PluginCall call) {
     active = true;
+    home = Boolean.TRUE.equals(call.getBoolean("video", false)) ? "speaker" : "earpiece"; // like WhatsApp
     audio.setMode(AudioManager.MODE_IN_COMMUNICATION);
     if (callback == null) {
       callback = new AudioDeviceCallback() {
@@ -167,13 +171,13 @@ public class AudioRoutePlugin extends Plugin {
         public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
           if (!active) return;
           String now = currentRoute();
-          if (!has(now) && !now.equals("speaker")) apply("speaker"); // the headset or Bluetooth is gone: back to the loudspeaker
+          if (!has(now)) apply(home); // the headset or Bluetooth is gone: back to where the call started
           tellAppSoon();
         }
       };
       audio.registerAudioDeviceCallback(callback, main);
     }
-    String first = has("bluetooth") ? "bluetooth" : has("headset") ? "headset" : "speaker";
+    String first = has("bluetooth") ? "bluetooth" : has("headset") ? "headset" : home;
     apply(first);
     tellAppSoon();
     call.resolve(state());

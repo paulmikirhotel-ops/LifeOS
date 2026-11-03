@@ -117,7 +117,7 @@ export default function CallScreen({ title: titleHint, mode: modeHint = 'voice',
 
   const hasVideo = room.camOn || remotes.some((p) => p.camOn && p.camTrack);
   useWakeLock(phase === 'live' || phase === 'calling' || phase === 'reconnecting');
-  const audio = useAudioRoute(phase === 'live' || phase === 'calling' || phase === 'reconnecting'); // Android app: loudspeaker / Bluetooth
+  const audio = useAudioRoute(phase === 'live' || phase === 'calling' || phase === 'reconnecting', { video: modeHint === 'video' }); // Android app: loudspeaker / Bluetooth
 
   const hangUp = useCallback(() => {
     hungUp.current = true;
@@ -129,7 +129,7 @@ export default function CallScreen({ title: titleHint, mode: modeHint = 'voice',
   const main = pickMain(people);
   const others = remotes.filter((p) => p !== main);
   const seconds = connectedAt ? (now - connectedAt) / 1000 : 0;
-  const status = phase === 'live' ? formatDuration(seconds) : phase === 'ended' ? endedText(everConnected) : phaseText(phase, { group: meta.group });
+  const status = phase === 'live' ? formatDuration(seconds) : phase === 'ended' ? endedText(everConnected) : phase === 'calling' ? 'Ringing…' : phaseText(phase, { group: meta.group });
   const headline = meta.title || (remotes[0]?.name ?? 'Call');
 
   return (
@@ -149,7 +149,15 @@ export default function CallScreen({ title: titleHint, mode: modeHint = 'voice',
       {!(hasVideo && main) && (
         <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-6 px-6">
           {remotes.length <= 1 ? (
-            <Face name={headline} group={meta.group && remotes.length === 0} speaking={Boolean(remotes[0]?.isSpeaking)} />
+            <span className="relative isolate inline-flex" data-ring={phase === 'calling' ? 'on' : undefined}>
+              {phase === 'calling' && (
+                <>
+                  <span aria-hidden="true" className="absolute inset-0 -z-10 animate-ping rounded-full bg-white/25" />
+                  <span aria-hidden="true" className="absolute -inset-4 -z-10 animate-pulse rounded-full ring-2 ring-white/25" />
+                </>
+              )}
+              <Face name={headline} group={meta.group && remotes.length === 0} speaking={Boolean(remotes[0]?.isSpeaking)} />
+            </span>
           ) : (
             <div className="flex max-w-md flex-wrap items-start justify-center gap-5">
               {remotes.map((p) => (
