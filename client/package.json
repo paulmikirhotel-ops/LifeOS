@@ -29,6 +29,7 @@
     "react-hook-form": "^7.54.0",
     "react-router-dom": "^7.0.0",
     "recharts": "^3.0.0",
+    "three": "^0.187.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
