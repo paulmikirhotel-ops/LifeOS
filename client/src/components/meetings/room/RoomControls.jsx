@@ -1,5 +1,7 @@
 import React from 'react';
-import { Mic, MicOff, Video, VideoOff, MonitorUp, SwitchCamera, PhoneOff, Users, Captions, Wifi, WifiOff, MessageCircle } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, MonitorUp, SwitchCamera, PhoneOff, Users, Captions, Wifi, WifiOff, MessageCircle } from 'lucide-react';
+import AudioRouteControl from '../../../native/AudioRouteControl.jsx';
+import { useAudioRoute } from '../../../native/useAudioRoute.js';
 
 const TONES = {
   neutral: 'bg-white/10 text-white hover:bg-white/20 active:bg-white/25',
@@ -33,7 +35,8 @@ const canShareScreen = typeof navigator !== 'undefined' && Boolean(navigator.med
 
 /** Bottom control bar: big touch targets, wraps instead of overflowing on small phones. */
 export default function RoomControls({ room, count, onToggleParticipants, onToggleTranscript, showTranscript, onToggleChat, showChat, chatUnread = 0, onLeave, leaveLabel = 'Leave meeting' }) {
-  const blocked = room.mediaOk === false; // insecure origin / no camera API: the buttons stay, but explain themselves when pressed
+  const blocked = room.mediaOk === false; // insecure origin / no camera API: the buttons stay, but explain themselves when pressed
+  const audio = useAudioRoute(room.status === 'connected'); // Android app: loudspeaker / Bluetooth
   const micTone = blocked ? 'warn' : room.micOn ? 'neutral' : 'off';
   const camTone = blocked ? 'warn' : room.dataSaver ? 'neutral' : room.camOn ? 'neutral' : 'off';
   return (
@@ -53,6 +56,7 @@ export default function RoomControls({ room, count, onToggleParticipants, onTogg
       {onToggleChat && <Ctl label="Chat" caption="Chat" tone={showChat ? 'active' : 'neutral'} pressed={showChat} onClick={onToggleChat} badge={chatUnread > 0 ? (chatUnread > 9 ? '9+' : chatUnread) : null}><MessageCircle className="h-5 w-5" /></Ctl>}
       <Ctl label="Participants" caption="People" onClick={onToggleParticipants} badge={count}><Users className="h-5 w-5" /></Ctl>
       {onToggleTranscript && <Ctl label="Live transcript" caption="Captions" tone={showTranscript ? 'active' : 'neutral'} pressed={showTranscript} onClick={onToggleTranscript}><Captions className="h-5 w-5" /></Ctl>}
+      {audio.supported && <AudioRouteControl audio={audio} variant="bar" />}
       <Ctl label={leaveLabel} caption="Leave" tone="danger" onClick={onLeave}><PhoneOff className="h-5 w-5" /></Ctl>
     </div>
     </div>

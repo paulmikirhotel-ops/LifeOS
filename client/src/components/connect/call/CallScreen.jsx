@@ -6,7 +6,9 @@ import { useWakeLock } from '../../../hooks/useWakeLock.js';
 import RemoteAudio from '../../meetings/room/RemoteAudio.jsx';
 import RoomAudioPanel from '../../meetings/room/RoomAudioPanel.jsx';
 import { startRingtone, stopRingtone } from '../../../utils/ringtone.js';
-import { callPhase, phaseText, endedText, formatDuration, pickMain } from '../../../utils/callState.js';
+import { callPhase, phaseText, endedText, formatDuration, pickMain } from '../../../utils/callState.js';
+import AudioRouteControl from '../../../native/AudioRouteControl.jsx';
+import { useAudioRoute } from '../../../native/useAudioRoute.js';
 
 const TONES = ['bg-blue-600', 'bg-sky-600', 'bg-indigo-600', 'bg-cyan-600', 'bg-blue-700', 'bg-sky-700'];
 const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 0);
@@ -114,7 +116,8 @@ export default function CallScreen({ title: titleHint, mode: modeHint = 'voice',
   }, [phase, navigate, exitTo]);
 
   const hasVideo = room.camOn || remotes.some((p) => p.camOn && p.camTrack);
-  useWakeLock(phase === 'live' || phase === 'calling' || phase === 'reconnecting');
+  useWakeLock(phase === 'live' || phase === 'calling' || phase === 'reconnecting');
+  const audio = useAudioRoute(phase === 'live' || phase === 'calling' || phase === 'reconnecting'); // Android app: loudspeaker / Bluetooth
 
   const hangUp = useCallback(() => {
     hungUp.current = true;
@@ -204,7 +207,7 @@ export default function CallScreen({ title: titleHint, mode: modeHint = 'voice',
       </div>
 
       {/* Controls */}
-      <footer className="relative z-10 flex items-start justify-center gap-4 px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-4">
+      <footer className="relative z-10 flex flex-wrap items-start justify-center gap-x-4 gap-y-3 px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-4">
         <Round label={room.micOn ? 'Mute' : 'Unmute'} active={room.micOn} onClick={room.toggleMic} disabled={phase === 'connecting' || phase === 'ended'}>
           {room.micOn ? <Mic className="h-6 w-6" aria-hidden="true" /> : <MicOff className="h-6 w-6" aria-hidden="true" />}
         </Round>
@@ -216,6 +219,7 @@ export default function CallScreen({ title: titleHint, mode: modeHint = 'voice',
             <SwitchCamera className="h-6 w-6" aria-hidden="true" />
           </Round>
         )}
+        {audio.supported && phase !== 'ended' && <AudioRouteControl audio={audio} variant="round" />}
         <Round label={phase === 'ended' ? 'Close' : 'End'} danger onClick={hangUp}>
           <PhoneOff className="h-6 w-6" aria-hidden="true" />
         </Round>

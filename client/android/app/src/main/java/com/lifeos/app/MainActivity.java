@@ -7,6 +7,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
   @Override
   protected void onCreate(android.os.Bundle savedInstanceState) {
+    registerPlugin(AudioRoutePlugin.class); // before super.onCreate, as Capacitor requires
     super.onCreate(savedInstanceState);
     createCallChannel();
   }
