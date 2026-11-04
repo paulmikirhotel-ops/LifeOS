@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mic, MicOff, Video, VideoOff, SwitchCamera, PhoneOff, Volume2, AlertTriangle, X } from 'lucide-react';
 import { useMeetingRoom } from '../../../hooks/useMeetingRoom.js';
@@ -9,6 +9,10 @@ import { startRingtone, stopRingtone } from '../../../utils/ringtone.js';
 import { callPhase, phaseText, endedText, formatDuration, pickMain } from '../../../utils/callState.js';
 import AudioRouteControl from '../../../native/AudioRouteControl.jsx';
 import { useAudioRoute } from '../../../native/useAudioRoute.js';
+import { canUse3D } from '../../../utils/webgl.js';
+
+// The 3D background is downloaded only on a voice call, on a phone that can show it (see utils/webgl.js).
+const CallOrbs = lazy(() => import('../ConnectOrbs.jsx'));
 
 const TONES = ['bg-blue-600', 'bg-sky-600', 'bg-indigo-600', 'bg-cyan-600', 'bg-blue-700', 'bg-sky-700'];
 const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 0);
@@ -65,6 +69,7 @@ export default function CallScreen({ title: titleHint, mode: modeHint = 'voice',
   const [now, setNow] = useState(Date.now());
   const [attempt, setAttempt] = useState(0);
   const [bannerOff, setBannerOff] = useState(false);
+  const [with3d] = useState(() => canUse3D());
   const hungUp = useRef(false);
 
   // Join as soon as the screen opens (the tap on Call / Answer started this, so audio is allowed).
@@ -135,6 +140,7 @@ export default function CallScreen({ title: titleHint, mode: modeHint = 'voice',
   return (
     <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-blue-950 to-slate-900 text-white" role="main" aria-label={`${hasVideo ? 'Video' : 'Voice'} call with ${headline}`}>
       <RemoteAudio participants={people} />
+      {!hasVideo && with3d && <Suspense fallback={null}><CallOrbs layout="call" className="z-0" /></Suspense>}
 
       {/* Video: the other person fills the screen */}
       {hasVideo && main && <Video_ track={main.camTrack} className="absolute inset-0 h-full w-full object-cover" />}

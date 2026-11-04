@@ -1,11 +1,11 @@
-import { orbSpecs } from './webgl.js';
+import { orbSpecs, ringSpecs } from './webgl.js';
 
 /**
  * Builds the floating-orbs picture inside `host` (a div) with three.js and returns { dispose }.
  * `THREE` is passed in so the screen can load three.js only when it is needed, and so this can be tested with a stand-in.
  * Light on battery: 30 pictures a second at most, pixel ratio capped, pauses when off screen or when the tab is hidden.
  */
-export function createOrbScene(THREE, host, { dark = false, env = {} } = {}) {
+export function createOrbScene(THREE, host, { dark = false, layout = 'hero', env = {} } = {}) {
   const raf = env.raf || ((f) => requestAnimationFrame(f));
   const caf = env.caf || ((id) => cancelAnimationFrame(id));
   const doc = env.doc || (typeof document !== 'undefined' ? document : null);
@@ -33,7 +33,7 @@ export function createOrbScene(THREE, host, { dark = false, env = {} } = {}) {
   const sphere = new THREE.SphereGeometry(1, 32, 24);
   const ringGeo = new THREE.TorusGeometry(1, 0.03, 12, 96);
   const materials = [];
-  const orbs = orbSpecs().map((s) => {
+  const orbs = orbSpecs(layout).map((s) => {
     const mat = new THREE.MeshLambertMaterial({ color: s.color, transparent: true, opacity: s.opacity });
     materials.push(mat);
     const mesh = new THREE.Mesh(sphere, mat);
@@ -44,10 +44,10 @@ export function createOrbScene(THREE, host, { dark = false, env = {} } = {}) {
   });
   const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
   materials.push(ringMat);
-  const rings = [[6.2, 8, 0.9], [4.2, 5.5, 1.4]].map(([scale, x, tilt]) => {
+  const rings = ringSpecs(layout).map(([scale, x, y, tilt]) => {
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.scale.setScalar(scale);
-    ring.position.set(x, 0.2, -2);
+    ring.position.set(x, y, -2);
     ring.rotation.x = tilt;
     scene.add(ring);
     return ring;

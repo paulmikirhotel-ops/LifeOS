@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { detect3D, orbSpecs } from '../src/utils/webgl.js';
+import { detect3D, orbSpecs, ringSpecs } from '../src/utils/webgl.js';
 import { createOrbScene } from '../src/utils/orbScene.js';
 
 test('3D is allowed on a normal phone', () => {
@@ -87,4 +87,28 @@ test('scene draws, caps pixel ratio, pauses when the tab is hidden, and cleans u
   for (const need of ['dispose renderer', 'dispose sphere', 'dispose torus', 'dispose lambert', 'dispose basic']) assert.ok(log.includes(need), need);
   assert.equal(Object.keys(env.doc.listeners).length, 0, 'listeners removed');
   scene.dispose(); // twice is harmless
+});
+
+test('call layout keeps every sphere on a tall phone screen', () => {
+  const half = 12 * Math.tan((40 / 2) * Math.PI / 180); // visible half-height at the camera distance
+  const halfWidth = half * 0.45; // a narrow phone, width/height about 0.45
+  const calls = orbSpecs('call');
+  assert.ok(calls.length >= 4);
+  for (const s of calls) {
+    assert.ok(Math.abs(s.x) + s.r <= halfWidth + 0.8, `x ${s.x} r ${s.r}`);
+    assert.ok(Math.abs(s.y) + s.r <= half + 0.8, `y ${s.y} r ${s.r}`);
+  }
+  assert.notDeepEqual(calls, orbSpecs('hero'));
+  assert.deepEqual(orbSpecs(), orbSpecs('hero'));
+  assert.equal(ringSpecs('call').length, 2);
+  assert.equal(ringSpecs('call')[0][1], 0, 'rings centred on the picture');
+  assert.equal(ringSpecs().length, 2);
+});
+
+test('scene builds the call layout too', () => {
+  const log = []; const env = fakeEnv(); const host = fakeHost();
+  const scene = createOrbScene(fakeThree(log), host, { layout: 'call', env });
+  assert.equal(host.children.length, 1);
+  scene.dispose();
+  assert.equal(host.children.length, 0);
 });

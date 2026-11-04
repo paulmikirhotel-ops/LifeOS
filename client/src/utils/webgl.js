@@ -31,8 +31,21 @@ export function canUse3D() {
   }
 }
 
-/** The floating spheres, always the same so the picture is steady. x/y/z are positions, r is size, amp/speed/phase drive the float. */
-export function orbSpecs() {
+/**
+ * The floating spheres, always the same so the picture is steady. x/y/z are positions, r is size, amp/speed/phase drive the float.
+ * layout "hero" fits a wide header; layout "call" fits a tall phone screen (voice call).
+ */
+export function orbSpecs(layout = 'hero') {
+  if (layout === 'call') {
+    return [
+      { x: -1.5, y: 3.2, z: -1, r: 1.1, amp: 0.35, speed: 0.55, phase: 0.0, color: 0x38bdf8, opacity: 0.5 },
+      { x: 1.7, y: 1.6, z: 0, r: 0.6, amp: 0.3, speed: 0.8, phase: 1.3, color: 0xffffff, opacity: 0.4 },
+      { x: -1.8, y: -1.2, z: 1, r: 0.8, amp: 0.3, speed: 0.65, phase: 2.1, color: 0x6366f1, opacity: 0.5 },
+      { x: 1.4, y: -2.9, z: -1, r: 1.3, amp: 0.35, speed: 0.5, phase: 3.4, color: 0x2563eb, opacity: 0.45 },
+      { x: -0.4, y: -4.0, z: 0, r: 0.5, amp: 0.25, speed: 0.9, phase: 4.2, color: 0x22d3ee, opacity: 0.5 },
+      { x: 1.9, y: 3.7, z: 1, r: 0.4, amp: 0.25, speed: 1.0, phase: 5.0, color: 0xffffff, opacity: 0.4 },
+    ];
+  }
   return [
     { x: 7.5, y: 0.6, z: -1, r: 2.1, amp: 0.45, speed: 0.55, phase: 0.0, color: 0x38bdf8, opacity: 0.55 },
     { x: 4.2, y: -1.8, z: 1, r: 1.1, amp: 0.35, speed: 0.8, phase: 1.3, color: 0xffffff, opacity: 0.4 },
@@ -41,4 +54,9 @@ export function orbSpecs() {
     { x: -4.5, y: -1.2, z: -3, r: 1.7, amp: 0.4, speed: 0.5, phase: 4.2, color: 0x2563eb, opacity: 0.4 },
     { x: 8.8, y: 2.6, z: 1.5, r: 0.7, amp: 0.3, speed: 1.0, phase: 5.0, color: 0xffffff, opacity: 0.45 },
   ];
+}
+
+/** The two thin rings: [scale, x, y, tilt]. In a call they circle the caller's picture. */
+export function ringSpecs(layout = 'hero') {
+  return layout === 'call' ? [[2.6, 0, 0.9, 0.9], [3.6, 0, 0.9, 1.4]] : [[6.2, 8, 0.2, 0.9], [4.2, 5.5, 0.2, 1.4]];
 }
