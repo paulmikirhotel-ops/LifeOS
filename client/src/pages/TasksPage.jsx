@@ -4,6 +4,7 @@ import api from '../api/client.js';
 import { formatApiError } from '../utils/errors.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { Spinner } from '../components/ui.jsx';
+import SiteHero from '../components/SiteHero.jsx';
 import ConfirmDialog from '../components/meetings/ConfirmDialog.jsx';
 import TaskStats from '../components/tasks/TaskStats.jsx';
 import TaskRow from '../components/tasks/TaskRow.jsx';
@@ -214,19 +215,20 @@ export default function TasksPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-12">
       {/* Header */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Tasks</h1>
-          <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400" aria-live="polite">{subtitle}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => openDrawer()}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 active:scale-[0.98] dark:focus-visible:ring-offset-slate-950"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" /> New task
-        </button>
-      </header>
+      <SiteHero
+        live
+        title="Tasks"
+        description={subtitle}
+        actions={(
+          <button
+            type="button"
+            onClick={() => openDrawer()}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 active:scale-[0.98] dark:focus-visible:ring-offset-slate-950"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" /> New task
+          </button>
+        )}
+      />
 
       <TaskStats stats={stats} onJump={setTab} />
 

@@ -16,7 +16,8 @@ import { HandHeart } from 'lucide-react';
 import { Radar } from 'lucide-react';
 import { Sparkles } from 'lucide-react';
 import { Compass } from 'lucide-react';
-import { useAuth } from '../context/AuthContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+
 import { useNativePush } from '../hooks/useNativePush.js';
 import { useTenant } from '../context/TenantContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
@@ -113,13 +114,13 @@ function AppLayoutInner() {
               className={({ isActive }) => `
                 relative flex items-center px-3 py-2.5 rounded-xl text-sm transition-colors group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60
                 ${isActive 
-                  ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300 font-semibold' 
+                  ? 'bg-gradient-to-r from-blue-600 to-sky-500 text-white shadow-md shadow-blue-600/25 font-semibold' 
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/80 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}
               `}
             >
               {({ isActive }) => (
                 <>
-                  <span aria-hidden="true" className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full bg-indigo-500 transition-all duration-300 ${isActive ? 'h-5 opacity-100' : 'h-0 opacity-0'}`} />
+                  <span aria-hidden="true" className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full bg-white transition-all duration-300 ${isActive ? 'h-5 opacity-100' : 'h-0 opacity-0'}`} />
                   <item.icon className={`w-5 h-5 flex-shrink-0 ${isSidebarOpen ? 'mr-3' : 'mx-auto'}`} />
                   {isSidebarOpen && <span className="truncate">{item.label}</span>}
                   {item.path === '/connect' && connectBadge > 0 && (
@@ -137,7 +138,7 @@ function AppLayoutInner() {
               onClick={() => navigate('/settings')}
               className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60"
             >
-              <span className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{initials}</span>
+              <span className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-sky-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{initials}</span>
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-slate-900 dark:text-white truncate">{user?.name}</span>
                 <span className="block text-[11px] text-slate-500 truncate">{user?.email}</span>
@@ -251,7 +252,7 @@ function AppLayoutInner() {
                 aria-label="Account menu"
                 className="flex items-center justify-center w-10 h-10 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white text-xs font-bold flex items-center justify-center overflow-hidden">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-sky-500 text-white text-xs font-bold flex items-center justify-center overflow-hidden">
                   {user?.avatar ? <img src={user.avatar} alt="" className="w-full h-full object-cover" /> : initials}
                 </div>
               </button>
@@ -311,12 +312,12 @@ function AppLayoutInner() {
               end={item.path === '/'}
               className={({ isActive }) => `
                 relative flex flex-col items-center justify-center gap-0.5 flex-1 min-h-12 py-1 rounded-xl transition-colors min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60
-                ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}
+                ${isActive ? 'text-blue-600 dark:text-sky-400' : 'text-slate-500'}
               `}
             >
               {({ isActive }) => (
                 <>
-                  <span aria-hidden="true" className={`absolute top-0 h-0.5 rounded-full bg-indigo-500 transition-all duration-300 ${isActive ? 'w-8 opacity-100' : 'w-0 opacity-0'}`} />
+                  <span aria-hidden="true" className={`absolute top-0 h-0.5 rounded-full bg-blue-500 transition-all duration-300 ${isActive ? 'w-8 opacity-100' : 'w-0 opacity-0'}`} />
                   <item.icon className="w-5 h-5" />
                   <span className="text-[10px] font-medium truncate max-w-full px-0.5">{item.label}</span>
                 </>
@@ -327,7 +328,7 @@ function AppLayoutInner() {
             onClick={() => setIsMoreOpen(true)}
             aria-haspopup="dialog"
             aria-expanded={isMoreOpen}
-            className={`flex flex-col items-center justify-center gap-0.5 flex-1 min-h-12 py-1 rounded-xl transition-colors min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${isMoreOpen ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 min-h-12 py-1 rounded-xl transition-colors min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${isMoreOpen ? 'text-blue-600 dark:text-sky-400' : 'text-slate-500'}`}
           >
             <span className="relative">
               <MoreHorizontal className="w-5 h-5" />
@@ -342,7 +343,7 @@ function AppLayoutInner() {
       {isMoreOpen && (
         <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="All modules">
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsMoreOpen(false)} />
-          <div className="sheet-in absolute bottom-0 inset-x-0 bg-white dark:bg-slate-900 rounded-t-2xl border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[75dvh] flex flex-col pb-[env(safe-area-inset-bottom,0px)]">
+          <div className="sheet-in absolute bottom-0 inset-x-0 bg-white dark:bg-slate-900 rounded-t-3xl border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[75dvh] flex flex-col pb-[env(safe-area-inset-bottom,0px)]">
             <div className="flex items-center justify-between px-5 pt-4 pb-2 border-b border-slate-100 dark:border-slate-800">
               <h2 className="text-base font-bold dark:text-white">All modules</h2>
               <button
@@ -362,7 +363,7 @@ function AppLayoutInner() {
                   className={({ isActive }) => `
                     flex items-center gap-3 px-4 py-3 rounded-xl transition-all
                     ${isActive
-                      ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400 font-medium'
+                      ? 'bg-blue-50 text-blue-600 dark:bg-sky-500/10 dark:text-sky-400 font-medium'
                       : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}
                   `}
                 >

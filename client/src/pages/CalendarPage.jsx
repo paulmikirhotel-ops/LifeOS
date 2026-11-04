@@ -17,6 +17,7 @@ import {
   Button, Card, Modal, Input, Textarea,
   Select, Badge, ErrorState, Skeleton, IconButton
 } from '../components/ui.jsx';
+import SiteHero from '../components/SiteHero.jsx';
 import { useForm } from 'react-hook-form';
 
 const TONE = {
@@ -127,14 +128,19 @@ export default function CalendarPage() {
     <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 lg:items-start">
       {/* Month grid */}
       <section className="flex-1 flex flex-col min-w-0" aria-label="Calendar">
-        <header className="flex flex-row items-center justify-between gap-3 mb-4 sm:mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white truncate" aria-live="polite">{format(currentMonth, 'MMMM yyyy')}</h1>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <IconButton icon={ChevronLeft} label="Previous month" onClick={prevMonth} className="!text-slate-500" />
-            <Button variant="soft" size="sm" onClick={() => { setCurrentMonth(new Date()); setSelectedDate(new Date()); }}>Today</Button>
-            <IconButton icon={ChevronRight} label="Next month" onClick={nextMonth} className="!text-slate-500" />
-          </div>
-        </header>
+        <SiteHero
+          live
+          compact
+          className="mb-4 sm:mb-6"
+          title={format(currentMonth, 'MMMM yyyy')}
+          actions={(
+            <>
+              <IconButton icon={ChevronLeft} label="Previous month" onClick={prevMonth} className="!text-slate-500" />
+              <Button variant="soft" size="sm" onClick={() => { setCurrentMonth(new Date()); setSelectedDate(new Date()); }}>Today</Button>
+              <IconButton icon={ChevronRight} label="Next month" onClick={nextMonth} className="!text-slate-500" />
+            </>
+          )}
+        />
 
         {error && !eventsData ? (
           <Card><ErrorState title="Calendar couldn't load" details={error} onRetry={reload} /></Card>

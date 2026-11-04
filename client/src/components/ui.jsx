@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef } from 'react';
 import { Loader2, X, AlertCircle } from 'lucide-react';
 import { useCountUp } from '../hooks/useCountUp.js';
+import SiteHero from './SiteHero.jsx';
 
 /* ──────────────────────────────────────────────────────────────────────────────────────────────────
    LifeOS UI kit. Every page builds on these, so improving one here improves the whole app.
@@ -60,17 +61,9 @@ export function Button({
 }
 
 // ── Page furniture ──────────────────────────────────────────────────────────────────────────────────
-/** Consistent page title row. `actions` sit on the right on wide screens and stack below the title on phones. */
+/** Consistent page title: the blue gradient header (see SiteHero). `actions` sit in a white chip on the right. */
 export function PageHeader({ title, description, actions, className = '' }) {
-  return (
-    <header className={`flex flex-col sm:flex-row sm:items-end justify-between gap-4 ${className}`}>
-      <div className="min-w-0">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{title}</h1>
-        {description && <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">{description}</p>}
-      </div>
-      {actions && <div className="flex flex-wrap items-center gap-3">{actions}</div>}
-    </header>
-  );
+  return <SiteHero title={title} description={description} actions={actions} className={className} />;
 }
 
 /** Icon-only button with a 44px touch target on phones. `label` is required: it is the accessible name and tooltip. */
@@ -430,10 +423,10 @@ export function ProgressBar({ value = 0, max = 100, color = 'indigo', label, cla
 
 export function StatCard({ title, value, icon: Icon, trend, trendValue, color = 'indigo', loading = false, animate = false }) {
   const colors = {
-    indigo: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400',
-    emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
-    amber: 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
-    rose: 'bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400',
+    indigo: 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md shadow-blue-600/25',
+    emerald: 'bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md shadow-emerald-600/25',
+    amber: 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md shadow-amber-600/25',
+    rose: 'bg-gradient-to-br from-rose-400 to-pink-600 text-white shadow-md shadow-rose-600/25',
   };
 
   if (loading) {
@@ -450,7 +443,7 @@ export function StatCard({ title, value, icon: Icon, trend, trendValue, color = 
   return (
     <Card interactive className="p-4 sm:p-6">
       <div className="flex items-center justify-between mb-3 sm:mb-4">
-        <div className={`p-2.5 sm:p-3 rounded-xl ${colors[color] || colors.indigo}`}>{Icon && <Icon className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />}</div>
+        <div className={`p-2.5 sm:p-3 rounded-full ${colors[color] || colors.indigo}`}>{Icon && <Icon className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />}</div>
         {trend && (
           <div className={`flex items-center text-xs font-medium ${trend === 'up' ? 'text-emerald-600' : 'text-rose-600'}`}>
             {trend === 'up' ? '↑' : '↓'} {trendValue}%

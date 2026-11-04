@@ -15,6 +15,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import api from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import NextStepCard from '../components/nextstep/NextStepCard.jsx';
+import SiteHero from '../components/SiteHero.jsx';
 
 const EMPTY = {
   tasks: { dueToday: 0, completedToday: 0, pending: 0, items: [] },
@@ -90,18 +91,17 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 sm:space-y-8">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{formatDate(new Date(), 'EEEE, MMMM do')}</p>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white truncate">
-            {greeting()}{firstName ? `, ${firstName}` : ''}
-          </h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button icon={Plus} onClick={() => navigate('/tasks')}>Add Task</Button>
-          <Button variant="secondary" icon={Zap} onClick={() => navigate('/focus')}>Focus</Button>
-        </div>
-      </header>
+      <SiteHero
+        orbs
+        eyebrow={formatDate(new Date(), 'EEEE, MMMM do')}
+        title={`${greeting()}${firstName ? `, ${firstName}` : ''}`}
+        actions={(
+          <>
+            <Button icon={Plus} onClick={() => navigate('/tasks')}>Add Task</Button>
+            <Button variant="secondary" icon={Zap} onClick={() => navigate('/focus')}>Focus</Button>
+          </>
+        )}
+      />
 
       <NextStepCard />
 
