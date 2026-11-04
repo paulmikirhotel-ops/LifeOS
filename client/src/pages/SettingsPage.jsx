@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import SiteHero from '../components/SiteHero.jsx';
 import { 
   User, Shield, Users, Bell, 
   Trash2, Save, Key, UserPlus, 
@@ -33,9 +34,9 @@ export default function SettingsPage() {
   ].filter(t => t.show);
 
   return (
-    <div className="max-w-5xl mx-auto flex flex-col lg:flex-row gap-6 lg:gap-8 pb-20">
+    <div className="max-w-5xl mx-auto flex flex-col lg:flex-row lg:flex-wrap gap-6 lg:gap-8 pb-20">
+      <SiteHero compact title="Settings" className="lg:basis-full" />
       <aside className="w-full lg:w-64 flex-shrink-0">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white mb-4 lg:mb-6">Settings</h1>
         {/* Phones: one scrolling row of tabs. Larger screens: a vertical list. */}
         <div role="tablist" aria-label="Settings sections" aria-orientation="vertical" className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible -mx-4 px-4 lg:mx-0 lg:px-0 pb-1 lg:pb-0 [scrollbar-width:none]">
           {tabs.map((tab) => (

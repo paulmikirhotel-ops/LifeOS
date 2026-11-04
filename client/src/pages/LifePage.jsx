@@ -1,4 +1,5 @@
 import React from 'react';
+import SiteHero from '../components/SiteHero.jsx';
 import { useSearchParams } from 'react-router-dom';
 import { Scale, BookOpen, Archive } from 'lucide-react';
 import BalanceTab from '../components/life/BalanceTab.jsx';
@@ -17,10 +18,7 @@ export default function LifePage() {
   const { Comp } = current;
   return (
     <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-5">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">My life</h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-1">Where your time goes, what you have learned, and a copy of your data. Everything here is private to you.</p>
-      </header>
+      <SiteHero title="My life" description="Where your time goes, what you have learned, and a copy of your data. Everything here is private to you." />
       <div role="tablist" aria-label="My life sections" className="flex gap-2 overflow-x-auto pb-1">
         {TABS.map((t) => {
           const Icon = t.icon;

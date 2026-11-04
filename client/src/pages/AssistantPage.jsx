@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import SiteHero from '../components/SiteHero.jsx';
 import { Sparkles, Send, Plus, Trash2, AlertCircle, ShieldCheck } from 'lucide-react';
 import { assistantApi } from '../api/assistant.js';
 import { useToast } from '../context/ToastContext.jsx';
@@ -133,18 +134,17 @@ export default function AssistantPage() {
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-4 min-h-[calc(100dvh-9rem)] md:min-h-[calc(100dvh-6rem)]">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold dark:text-white flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-indigo-600" aria-hidden="true" /> Assistant
-          </h1>
-          <p className="text-sm text-slate-500">Reads your tasks, events and goals. Asks before it changes anything.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={limitReached ? 'warning' : 'info'}>Messages today: {usage.used}/{usage.limit}</Badge>
-          <Button size="sm" variant="secondary" icon={Plus} onClick={() => openChat(null)}>New chat</Button>
-        </div>
-      </header>
+      <SiteHero
+        icon={Sparkles}
+        title="Assistant"
+        description="Reads your tasks, events and goals. Asks before it changes anything."
+        actions={(
+          <>
+            <Badge variant={limitReached ? 'warning' : 'info'}>Messages today: {usage.used}/{usage.limit}</Badge>
+            <Button size="sm" variant="secondary" icon={Plus} onClick={() => openChat(null)}>New chat</Button>
+          </>
+        )}
+      />
 
       {chats.length > 0 && (
         <div className="flex items-end gap-2">

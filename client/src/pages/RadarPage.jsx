@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import SiteHero from '../components/SiteHero.jsx';
 import { Radar, Plus, Bookmark, BookmarkCheck, X, ExternalLink, CalendarPlus, Sparkles, RefreshCw, ShieldAlert, Trash2, Rss, Clock } from 'lucide-react';
 import { radarApi } from '../api/radar.js';
 import { isLowData } from '../offline/status.js';
@@ -152,16 +153,17 @@ export default function RadarPage() {
   const counts = data.counts;
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold"><Radar className="h-6 w-6" /> Opportunity Radar</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Jobs, scholarships and grants from the feeds you follow. Nothing here is verified by LifeOS.</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" icon={RefreshCw} loading={refreshing} onClick={refreshNow} disabled={!data.hasSources}>Refresh</Button>
-          <Button icon={Rss} onClick={() => setSourcesOpen(true)}>Sources</Button>
-        </div>
-      </header>
+      <SiteHero
+        icon={Radar}
+        title="Opportunity Radar"
+        description="Jobs, scholarships and grants from the feeds you follow. Nothing here is verified by LifeOS."
+        actions={(
+          <>
+            <Button variant="secondary" icon={RefreshCw} loading={refreshing} onClick={refreshNow} disabled={!data.hasSources}>Refresh</Button>
+            <Button icon={Rss} onClick={() => setSourcesOpen(true)}>Sources</Button>
+          </>
+        )}
+      />
 
       <div role="note" className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-100">
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />

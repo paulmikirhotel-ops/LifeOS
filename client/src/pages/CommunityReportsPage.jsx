@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import SiteHero from '../components/SiteHero.jsx';
 import { Navigate } from 'react-router-dom';
 import { Flag, Loader2 } from 'lucide-react';
 import { Badge, Button, Card, EmptyState } from '../components/ui.jsx';
@@ -56,7 +57,7 @@ export default function CommunityReportsPage() {
   };
   return (
     <div className="space-y-4 pb-8">
-      <div><h1 className="text-2xl font-bold tracking-tight">Community reports</h1><p className="text-sm text-slate-500">Reports about community profiles and study groups. Platform administrators only.</p></div>
+      <SiteHero compact title="Community reports" description="Reports about community profiles and study groups. Platform administrators only." />
       <div role="tablist" aria-label="Report status" className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
         {TABS.map(([k, label]) => <button key={k} role="tab" aria-selected={status === k} onClick={() => setStatus(k)} className={`min-h-[40px] rounded-lg px-4 text-sm font-semibold ${status === k ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-900' : 'text-slate-500'}`}>{label}</button>)}
       </div>

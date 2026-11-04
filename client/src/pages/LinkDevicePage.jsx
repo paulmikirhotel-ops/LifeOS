@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import SiteHero from '../components/SiteHero.jsx';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Camera, Laptop, ShieldAlert, Smartphone, Trash2, Check, X } from 'lucide-react';
 import { deviceLinkApi } from '../api/deviceLink.js';
@@ -102,10 +103,7 @@ export default function LinkDevicePage() {
 
   return (
     <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-5">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Link a device</h1>
-        <p className="mt-1 text-slate-600 dark:text-slate-400">Sign in on a computer without typing your password: scan the code it shows, then tap Allow.</p>
-      </header>
+      <SiteHero title="Link a device" description="Sign in on a computer without typing your password: scan the code it shows, then tap Allow." />
 
       {unverified && (
         <Card className="flex gap-3 p-4 text-sm text-amber-800 dark:text-amber-200">

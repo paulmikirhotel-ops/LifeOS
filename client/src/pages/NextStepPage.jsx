@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import SiteHero from '../components/SiteHero.jsx';
 import { Compass, Plus, Pencil, X, Check, Clock, Sparkles, Archive, AlertCircle, CalendarDays } from 'lucide-react';
 import { nextstepApi } from '../api/nextstep.js';
 import { useToast } from '../context/ToastContext.jsx';
@@ -95,20 +96,19 @@ export default function NextStepPage() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in duration-500">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold dark:text-white flex items-center gap-2">
-            <Compass className="w-6 h-6 text-indigo-600" aria-hidden="true" /> NextStep
-          </h1>
-          <p className="text-sm text-slate-500">Turn one goal into a roadmap you control. Nothing is added until you approve it.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={usage.left ? 'info' : 'warning'}>AI drafts today: {usage.used}/{usage.limit}</Badge>
-          {canWrite && plans.length > 0 && !showForm && (
-            <Button size="sm" variant="secondary" icon={Plus} onClick={() => setCreating(true)}>New goal</Button>
-          )}
-        </div>
-      </header>
+      <SiteHero
+        icon={Compass}
+        title="NextStep"
+        description="Turn one goal into a roadmap you control. Nothing is added until you approve it."
+        actions={(
+          <>
+            <Badge variant={usage.left ? 'info' : 'warning'}>AI drafts today: {usage.used}/{usage.limit}</Badge>
+            {canWrite && plans.length > 0 && !showForm && (
+              <Button size="sm" variant="secondary" icon={Plus} onClick={() => setCreating(true)}>New goal</Button>
+            )}
+          </>
+        )}
+      />
 
       {!aiOn && (
         <Card className="p-4 border-amber-200 dark:border-amber-800">

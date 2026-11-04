@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import SiteHero from '../components/SiteHero.jsx';
 import { WifiOff, Trash2, RefreshCw, Database } from 'lucide-react';
 import { Button, Card, Badge, Select, EmptyState } from '../components/ui.jsx';
 import { useOffline, saveSettings, refreshUsage, isLowData } from '../offline/status.js';
@@ -32,10 +33,7 @@ export default function DataPage() {
 
   return (
     <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-5">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Data and offline</h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-1">Control how LifeOS behaves with a weak connection or limited data. These settings stay on this phone.</p>
-      </header>
+      <SiteHero title="Data and offline" description="Control how LifeOS behaves with a weak connection or limited data. These settings stay on this phone." />
 
       <Card className="p-4">
         <div className="flex items-center gap-2">

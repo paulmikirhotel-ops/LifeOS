@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import SiteHero from '../components/SiteHero.jsx';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { HandHeart, ShieldAlert, Search, Plus, MessagesSquare, Flag, Ban } from 'lucide-react';
 import { communityApi } from '../api/community.js';
@@ -29,10 +30,7 @@ export default function CommunityPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 pb-8">
-      <header>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold"><HandHeart className="h-6 w-6" /> Community</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Learn with others. People appear here only if they chose to. Chat and calls happen in Connect.</p>
-      </header>
+      <SiteHero icon={HandHeart} title="Community" description="Learn with others. People appear here only if they chose to. Chat and calls happen in Connect." />
       <div role="note" className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-100">
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
         <span>Mentors and groups are run by volunteers and are not verified by LifeOS. Never pay anyone to mentor you, and never share money, ID numbers or your address.</span>
@@ -40,7 +38,7 @@ export default function CommunityPage() {
       <div role="tablist" aria-label="Community sections" className="flex flex-wrap gap-2 border-b border-slate-200 pb-2 dark:border-slate-700">
         {TABS.map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} onClick={() => setParams({ tab: k })}
-            className={`min-h-[40px] rounded-lg px-3 text-sm font-medium ${tab === k ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>
+            className={`min-h-[40px] rounded-lg px-3 text-sm font-medium ${tab === k ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>
             {label}{k === 'requests' && me.incoming > 0 ? ` (${me.incoming})` : ''}
           </button>
         ))}
