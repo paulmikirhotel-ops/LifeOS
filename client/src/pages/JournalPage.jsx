@@ -97,7 +97,7 @@ export default function JournalPage() {
 
   const TABS = [{ id: 'journal', label: 'Journal' }, { id: 'myday', label: 'My Day' }, { id: 'review', label: 'Review' }];
   const noteItems = Array.isArray(notes?.items) ? notes.items : [];
-  const areaCls = 'w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 min-h-[96px]';
+  const areaCls = 'w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 min-h-[96px]';
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 lg:h-[calc(100dvh-8.5rem)]">
@@ -105,14 +105,14 @@ export default function JournalPage() {
       <aside className={`w-full lg:w-80 flex-shrink-0 flex-col gap-4 min-h-0 ${selectedNote ? 'hidden lg:flex' : 'flex'}`} aria-label="Entries">
         <header className="flex flex-col gap-3">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white lg:sr-only">Journal</h1>
-          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl" role="tablist" aria-label="Entry type">
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-full" role="tablist" aria-label="Entry type">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
                 role="tab"
                 aria-selected={activeTab === tab.id}
                 onClick={() => { setActiveTab(tab.id); setSelectedNote(null); }}
-                className={`flex-1 min-h-9 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                className={`flex-1 min-h-9 px-3 rounded-full text-xs font-bold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
               >
                 {tab.label}
               </button>
@@ -126,7 +126,7 @@ export default function JournalPage() {
               placeholder="Search notes..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="ui-radius-control w-full pl-10 pr-4 min-h-11 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 transition-colors text-slate-900 dark:text-white"
+              className="ui-radius-control !rounded-full w-full pl-10 pr-4 min-h-11 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 transition-colors text-slate-900 dark:text-white"
             />
           </div>
           <Button icon={Plus} onClick={handleCreate} className="w-full">New Entry</Button>
@@ -144,7 +144,7 @@ export default function JournalPage() {
                   <button
                     onClick={() => setSelectedNote(noteToEditor(note))}
                     aria-current={selectedNote?._id === note._id}
-                    className={`w-full text-left p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors focus-visible:outline-none focus-visible:bg-slate-50 dark:focus-visible:bg-slate-800/60 ${selectedNote?._id === note._id ? 'bg-indigo-50/60 dark:bg-indigo-500/10' : ''}`}
+                    className={`w-full text-left p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors focus-visible:outline-none focus-visible:bg-slate-50 dark:focus-visible:bg-slate-800/60 ${selectedNote?._id === note._id ? 'bg-blue-50/60 dark:bg-blue-500/10' : ''}`}
                   >
                     <div className="flex justify-between items-start mb-1">
                       <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{formatDate(note.entryDate, 'MMM d, yyyy')}</span>
@@ -185,7 +185,7 @@ export default function JournalPage() {
                   icon={selectedNote.isPrivate ? Lock : Unlock}
                   label={selectedNote.isPrivate ? 'Private. Click to make shareable' : 'Not private. Click to make private'}
                   aria-pressed={!!selectedNote.isPrivate}
-                  className={selectedNote.isPrivate ? '!text-indigo-600 bg-indigo-50 dark:bg-indigo-500/10' : ''}
+                  className={selectedNote.isPrivate ? '!text-blue-600 bg-blue-50 dark:bg-blue-500/10' : ''}
                   onClick={() => setSelectedNote({ ...selectedNote, isPrivate: !selectedNote.isPrivate })}
                 />
                 <IconButton icon={Trash2} tone="danger" label="Delete entry" onClick={() => setToDelete(selectedNote._id)} />
@@ -201,7 +201,7 @@ export default function JournalPage() {
                     type="date"
                     value={String(selectedNote.entryDate || todayStr()).split('T')[0]}
                     onChange={(e) => setSelectedNote({ ...selectedNote, entryDate: e.target.value })}
-                    className="bg-transparent text-slate-900 dark:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 rounded min-h-8"
+                    className="bg-transparent text-slate-900 dark:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 rounded min-h-8"
                   />
                 </label>
                 <label className="flex items-center gap-2">
@@ -209,7 +209,7 @@ export default function JournalPage() {
                   <select
                     value={selectedNote.mood}
                     onChange={(e) => setSelectedNote({ ...selectedNote, mood: e.target.value })}
-                    className="bg-transparent text-slate-900 dark:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 rounded font-bold min-h-8"
+                    className="bg-transparent text-slate-900 dark:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 rounded font-bold min-h-8"
                   >
                     {[
                       { value: 'great', label: 'Excited' },
@@ -246,7 +246,7 @@ export default function JournalPage() {
                 <div className="flex-1 lg:overflow-y-auto space-y-5 py-1">
                   {['Morning', 'Work', 'Study', 'Personal', 'Evening'].map((section) => (
                     <div key={section} className="space-y-2">
-                      <label htmlFor={`sec-${section}`} className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                      <label htmlFor={`sec-${section}`} className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-2">
                         <Sun className="w-3.5 h-3.5" aria-hidden="true" /> {section}
                       </label>
                       <textarea
@@ -286,8 +286,8 @@ export default function JournalPage() {
           </Card>
         ) : (
           <div className="h-full min-h-72 flex flex-col items-center justify-center text-center p-8 sm:p-12 bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 rounded-3xl">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-50 to-fuchsia-50 dark:from-indigo-500/10 dark:to-fuchsia-500/10 flex items-center justify-center mb-5">
-              <Book className="w-8 h-8 text-indigo-400" aria-hidden="true" />
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-50 to-sky-50 dark:from-blue-500/10 dark:to-sky-500/10 flex items-center justify-center mb-5">
+              <Book className="w-8 h-8 text-blue-400" aria-hidden="true" />
             </div>
             <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Select an entry</h2>
             <p className="text-sm text-slate-500 max-w-xs mb-6">Choose a note from the list or create a new one to start writing.</p>

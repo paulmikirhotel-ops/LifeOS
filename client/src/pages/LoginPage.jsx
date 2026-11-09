@@ -61,7 +61,7 @@ export default function LoginPage() {
         <div className="space-y-1">
           <div className="flex items-center justify-between">
             <label htmlFor="login-password" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
-            <Link to="/forgot-password" className="inline-flex items-center min-h-10 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">
+            <Link to="/forgot-password" className="inline-flex items-center min-h-10 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-500 font-medium">
               Forgot password?
             </Link>
           </div>
@@ -79,11 +79,11 @@ export default function LoginPage() {
           Sign In
         </Button>
       </form>
-      <p className="mt-4 text-center text-sm"><Link to="/login/qr" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Sign in with QR code (use your phone)</Link></p>
+      <p className="mt-4 text-center text-sm"><Link to="/login/qr" className="font-medium text-blue-600 hover:underline dark:text-blue-400">Sign in with QR code (use your phone)</Link></p>
 
       <p className="text-center text-sm text-slate-500">
         Don't have an account?{' '}
-        <Link to="/register" className="inline-flex items-center min-h-10 text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-semibold transition-colors">
+        <Link to="/register" className="inline-flex items-center min-h-10 text-blue-600 dark:text-blue-400 hover:text-blue-500 font-semibold transition-colors">
           Create an account
         </Link>
       </p>

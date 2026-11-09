@@ -50,7 +50,7 @@ export default function VerifyEmailPage() {
           <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto" />
           <h2 className="text-2xl font-bold dark:text-white">Email Verified!</h2>
           <p className="text-sm text-slate-500">{message}</p>
-          <Link to="/" className="inline-block bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-indigo-700 transition-colors">
+          <Link to="/" className="inline-block bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700 transition-colors">
             Go to Dashboard
           </Link>
         </div>
@@ -61,7 +61,7 @@ export default function VerifyEmailPage() {
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto" />
           <h2 className="text-2xl font-bold dark:text-white">Verification Failed</h2>
           <p className="text-sm text-slate-500">{message}</p>
-          <Link to="/login" className="inline-block text-indigo-600 font-bold hover:underline">
+          <Link to="/login" className="inline-block text-blue-600 font-bold hover:underline">
             Back to Login
           </Link>
         </div>

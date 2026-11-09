@@ -90,7 +90,7 @@ export default function RegisterPage() {
           <div className="grid grid-cols-2 gap-4">
             <label className={`
               flex flex-col items-center justify-center p-4 border-2 rounded-xl cursor-pointer transition-all
-              ${workspaceType === 'personal' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-100 dark:border-slate-800'}
+              ${workspaceType === 'personal' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-100 dark:border-slate-800'}
             `}>
               <input type="radio" value="personal" className="hidden" {...register('workspaceType')} />
               <span className="text-sm font-bold dark:text-white">Personal</span>
@@ -98,7 +98,7 @@ export default function RegisterPage() {
             </label>
             <label className={`
               flex flex-col items-center justify-center p-4 border-2 rounded-xl cursor-pointer transition-all
-              ${workspaceType === 'organization' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-100 dark:border-slate-800'}
+              ${workspaceType === 'organization' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-100 dark:border-slate-800'}
             `}>
               <input type="radio" value="organization" className="hidden" {...register('workspaceType')} />
               <span className="text-sm font-bold dark:text-white">Organization</span>
@@ -123,7 +123,7 @@ export default function RegisterPage() {
 
       <p className="text-center text-sm text-slate-500">
         Already have an account?{' '}
-        <Link to="/login" className="inline-flex items-center min-h-10 text-indigo-600 hover:text-indigo-500 font-semibold transition-colors">
+        <Link to="/login" className="inline-flex items-center min-h-10 text-blue-600 hover:text-blue-500 font-semibold transition-colors">
           Sign In
         </Link>
       </p>

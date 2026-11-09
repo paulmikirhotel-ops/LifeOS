@@ -51,7 +51,7 @@ export default function AuthLayout() {
 
   if (!hero) {
     return (
-      <div className="relative isolate min-h-screen bg-gradient-to-br from-indigo-50 via-white to-sky-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 flex flex-col items-center justify-center px-4 py-8 sm:px-6 safe-bottom">
+      <div className="relative isolate min-h-screen bg-gradient-to-br from-blue-50 via-white to-sky-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 flex flex-col items-center justify-center px-4 py-8 sm:px-6 safe-bottom">
         <Watermark />
         <div className="mb-6 sm:mb-8 flex items-center gap-3">
           <Logo size={48} showText={false} />
@@ -60,7 +60,8 @@ export default function AuthLayout() {
             <p className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400">Your Personal Digital Life Manager</p>
           </div>
         </div>
-        <main className="page-enter w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 dark:shadow-none">
+        <main className="page-enter relative w-full max-w-md overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 dark:shadow-none">
+          <span aria-hidden="true" className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-blue-600 via-sky-500 to-blue-600" />
           <Outlet />
         </main>
         <Legal />
@@ -69,9 +70,9 @@ export default function AuthLayout() {
   }
 
   return (
-    <div className="relative isolate min-h-screen bg-gradient-to-b from-sky-50 via-white to-indigo-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 lg:grid lg:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]">
+    <div className="relative isolate min-h-screen bg-gradient-to-b from-sky-50 via-white to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 lg:grid lg:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]">
       {/* ── Brand panel (large screens): the full picture, uncropped, with the motivational line ── */}
-      <aside className="relative hidden lg:flex flex-col items-center justify-center overflow-hidden px-10 xl:px-16 py-12 bg-gradient-to-br from-sky-100 via-white to-indigo-100 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
+      <aside className="relative hidden lg:flex flex-col items-center justify-center overflow-hidden px-10 xl:px-16 py-12 bg-gradient-to-br from-sky-100 via-white to-blue-100 dark:from-slate-900 dark:via-slate-950 dark:to-blue-950">
         <div aria-hidden="true" className="auth-glow absolute -top-32 -left-24 w-[28rem] h-[28rem] rounded-full bg-sky-300/40 dark:bg-sky-500/15 blur-3xl" />
         <div aria-hidden="true" className="auth-glow absolute -bottom-40 -right-20 w-[30rem] h-[30rem] rounded-full bg-amber-200/50 dark:bg-amber-400/10 blur-3xl" style={{ animationDelay: '-4s' }} />
 
@@ -83,7 +84,7 @@ export default function AuthLayout() {
           <div className="mt-9 text-center">
             <h2 className="auth-rise auth-rise-2 text-3xl xl:text-4xl font-black tracking-tight leading-tight text-slate-900 dark:text-white">
               {HEADLINE}{' '}
-              <span className="block bg-gradient-to-r from-blue-600 to-indigo-500 dark:from-sky-300 dark:to-indigo-300 bg-clip-text text-transparent">{HEADLINE_2}</span>
+              <span className="block bg-gradient-to-r from-blue-600 to-blue-500 dark:from-sky-300 dark:to-blue-300 bg-clip-text text-transparent">{HEADLINE_2}</span>
             </h2>
             <p className="auth-rise auth-rise-3 mt-3 text-base text-slate-600 dark:text-slate-300">Stay organized, focused and in control of your life — all in one place.</p>
             <ul className="auth-rise auth-rise-4 mt-6 flex flex-wrap justify-center gap-2.5" aria-label="What LifeOS helps you manage">
@@ -118,7 +119,8 @@ export default function AuthLayout() {
         </div>
         <h1 className="sr-only lg:hidden">LifeOS — your personal digital life manager</h1>
 
-        <main className="auth-rise auth-rise-2 w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 dark:shadow-none">
+        <main className="auth-rise auth-rise-2 relative w-full max-w-md overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 dark:shadow-none">
+          <span aria-hidden="true" className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-blue-600 via-sky-500 to-blue-600" />
           <Outlet />
         </main>
         <Legal />
@@ -130,9 +132,9 @@ export default function AuthLayout() {
 function Legal() {
   return (
     <nav aria-label="Legal" className="mt-4 sm:mt-6 flex items-center gap-5 text-xs font-medium text-slate-400">
-      <Link to="/privacy" className="inline-flex items-center min-h-10 px-1 hover:text-indigo-500 transition-colors">Privacy</Link>
-      <Link to="/terms" className="inline-flex items-center min-h-10 px-1 hover:text-indigo-500 transition-colors">Terms</Link>
-      <Link to="/help" className="inline-flex items-center min-h-10 px-1 hover:text-indigo-500 transition-colors">Help</Link>
+      <Link to="/privacy" className="inline-flex items-center min-h-10 px-1 hover:text-blue-500 transition-colors">Privacy</Link>
+      <Link to="/terms" className="inline-flex items-center min-h-10 px-1 hover:text-blue-500 transition-colors">Terms</Link>
+      <Link to="/help" className="inline-flex items-center min-h-10 px-1 hover:text-blue-500 transition-colors">Help</Link>
     </nav>
   );
 }
